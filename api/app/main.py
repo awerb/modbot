@@ -328,6 +328,16 @@ async def webhook(req: Request, db: Session = Depends(get_db)):
 
 # ---------- State + alerts (Phase 2) ----------
 
+def _has_recent_unresolved_alert(db: Session, group_id: str, kind: str, window_min: int) -> bool:
+    cutoff = datetime.utcnow() - timedelta(minutes=window_min)
+    return db.query(models.ModeratorAlert).filter(
+        models.ModeratorAlert.group_id == group_id,
+        models.ModeratorAlert.kind == kind,
+        models.ModeratorAlert.resolved_at.is_(None),
+        models.ModeratorAlert.created_at >= cutoff,
+    ).first() is not None
+
+
 def _emit_alert(db: Session, group_id: str, kind: str, payload: dict, dedupe_window_min: int = 30):
     """Emit an alert unless an unresolved one of the same kind exists within the dedupe window."""
     cutoff = datetime.utcnow() - timedelta(minutes=dedupe_window_min)
@@ -416,12 +426,12 @@ def _recompute_state_and_alerts(db: Session):
     db.commit()
 
     # Alerts
-    if hot_streak:
+    if hot_streak and not _has_recent_unresolved_alert(db, g.id, "pause_suggested", 30):
         prompt_msg = ai.pause_prompt(_transcript_tail(db, g.id, datetime.utcnow(), n=6))
         _emit_alert(db, g.id, "pause_suggested", {"rolling_heat": rolling, "draft": prompt_msg}, dedupe_window_min=30)
 
-    # Steelman missing: any disagreement message in last 3 without steelman
-    for m in last_3:
+    # Steelman missing: most recent disagreement in last 3 without steelman
+    for m in reversed(last_3):
         a = a_by_msg.get(m.id)
         if a and a.is_disagreement and not a.steelman_present and (a.heat_score or 0) >= 0.4:
             mem = members_by_id.get(m.member_id)
