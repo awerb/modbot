@@ -23,7 +23,11 @@ type Msg = {
     target_category?: string | null;
     has_unsourced_claim: boolean;
     topic_tags: string[];
+    factuality_notes?: string | null;
+    target_notes?: string | null;
   } | null;
+  // optimistic-send marker (not from server)
+  _optimistic?: boolean;
 };
 
 function timeLabel(iso: string) {
@@ -53,12 +57,14 @@ export default function ChatSimulator({
   const [members, setMembers] = useState<Member[]>([]);
   const [groupName, setGroupName] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
+  const [optimistic, setOptimistic] = useState<Msg[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [forwarded, setForwarded] = useState(false);
   const [sending, setSending] = useState(false);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const stickToBottom = useRef(true);
 
@@ -69,7 +75,7 @@ export default function ChatSimulator({
       setGroupName(r.group_name);
       setActive((prev) => prev || (r.members[0]?.id ?? null));
       onConnection?.(true);
-    } catch (e: any) {
+    } catch (e) {
       onConnection?.(false);
     }
   }
@@ -77,18 +83,27 @@ export default function ChatSimulator({
   async function loadMessages() {
     try {
       const r = await jget(`/chat/messages`);
-      setMessages(r.messages);
-      // Clear pending IDs that now have an analysis
+      const serverMsgs: Msg[] = r.messages;
+      setMessages(serverMsgs);
+      // Drop optimistic messages whose server twin has arrived
+      setOptimistic((opt) => {
+        if (opt.length === 0) return opt;
+        const serverByKey = new Set(
+          serverMsgs.map((m) => `${m.member.id}|${m.text}`)
+        );
+        return opt.filter((o) => !serverByKey.has(`${o.member.id}|${o.text}`));
+      });
+      // Clear pending IDs for messages that now have an analysis
       setPendingIds((prev) => {
         if (prev.size === 0) return prev;
         const next = new Set(prev);
-        for (const m of r.messages) {
+        for (const m of serverMsgs) {
           if (m.analysis && next.has(m.id)) next.delete(m.id);
         }
         return next;
       });
       onConnection?.(true);
-    } catch (e: any) {
+    } catch (e) {
       onConnection?.(false);
     }
   }
@@ -107,7 +122,7 @@ export default function ChatSimulator({
     if (stickToBottom.current) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [messages.length, pendingIds.size]);
+  }, [messages.length, optimistic.length, pendingIds.size]);
 
   function handleScroll() {
     const el = scrollerRef.current;
@@ -122,7 +137,7 @@ export default function ChatSimulator({
   );
 
   async function send() {
-    if (!text.trim() || !active) return;
+    if (!text.trim() || !active || !activeMember) return;
     setSending(true);
     setError(null);
     const sentText = text.trim();
@@ -130,6 +145,26 @@ export default function ChatSimulator({
     setText("");
     setForwarded(false);
     stickToBottom.current = true;
+
+    // Optimistic insert
+    const tempId = `opt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const opt: Msg = {
+      id: tempId,
+      text: sentText,
+      is_forwarded: sentForwarded,
+      received_at: new Date().toISOString(),
+      source: "simulated",
+      member: activeMember,
+      analysis: null,
+      _optimistic: true,
+    };
+    setOptimistic((prev) => [...prev, opt]);
+    setPendingIds((p) => {
+      const n = new Set(p);
+      n.add(tempId);
+      return n;
+    });
+
     try {
       const r = await jpost(
         `/test/simulate-message`,
@@ -137,8 +172,10 @@ export default function ChatSimulator({
         { timeoutMs: 45000 }
       );
       if (r?.message_id) {
+        // Transfer "pending" from the optimistic temp ID to the real server ID
         setPendingIds((p) => {
           const n = new Set(p);
+          n.delete(tempId);
           n.add(r.message_id);
           return n;
         });
@@ -147,7 +184,12 @@ export default function ChatSimulator({
       onUpdate?.();
     } catch (e: any) {
       setError(e?.message || "send failed");
-      // restore input so user doesn't lose it
+      setOptimistic((prev) => prev.filter((o) => o.id !== tempId));
+      setPendingIds((p) => {
+        const n = new Set(p);
+        n.delete(tempId);
+        return n;
+      });
       setText(sentText);
       setForwarded(sentForwarded);
     } finally {
@@ -155,10 +197,13 @@ export default function ChatSimulator({
     }
   }
 
+  // Combined timeline: server messages followed by any still-pending optimistics
+  const combined = [...messages, ...optimistic];
+
   // Group day-dividers
   const grouped: { day: string; items: Msg[] }[] = [];
   let curDay = "";
-  for (const m of messages) {
+  for (const m of combined) {
     const dl = dayLabel(m.received_at);
     if (dl !== curDay) {
       curDay = dl;
@@ -166,6 +211,15 @@ export default function ChatSimulator({
     } else {
       grouped[grouped.length - 1].items.push(m);
     }
+  }
+
+  function toggleExpand(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   return (
@@ -190,7 +244,7 @@ export default function ChatSimulator({
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto wa-bg px-4 py-3 space-y-1"
       >
-        {messages.length === 0 && (
+        {combined.length === 0 && (
           <div className="text-center text-xs text-gray-500 py-8">
             No messages yet. Pick a character and post something.
           </div>
@@ -205,6 +259,10 @@ export default function ChatSimulator({
             {g.items.map((m) => {
               const own = m.member.id === active;
               const isPending = pendingIds.has(m.id) && !m.analysis;
+              const a = m.analysis;
+              const hasNotes = !!(a && (a.target_notes || a.factuality_notes));
+              const isExpanded = expanded.has(m.id);
+              const showWhy = hasNotes && (a?.target_flag || a?.has_unsourced_claim);
               return (
                 <div
                   key={m.id}
@@ -218,7 +276,7 @@ export default function ChatSimulator({
                   <div
                     className={`max-w-[78%] rounded-lg px-2.5 py-1.5 bubble-shadow ${
                       own ? "bg-wa-out" : "bg-white"
-                    }`}
+                    } ${m._optimistic ? "opacity-70" : ""}`}
                   >
                     {!own && (
                       <div
@@ -237,23 +295,49 @@ export default function ChatSimulator({
                       {m.text}
                     </div>
                     <div className="flex items-center justify-end gap-1 mt-0.5 flex-wrap">
-                      {m.analysis?.target_flag && (
-                        <span className="text-[10px] bg-red-100 text-red-700 rounded px-1.5 py-0.5">
-                          flagged
-                        </span>
+                      {a?.target_flag && (
+                        <button
+                          onClick={() => toggleExpand(m.id)}
+                          className="text-[10px] bg-red-100 hover:bg-red-200 text-red-700 rounded px-1.5 py-0.5"
+                          title={a.target_category ? `category: ${a.target_category}` : "flagged"}
+                        >
+                          flagged{a.target_category ? ` · ${a.target_category}` : ""}
+                        </button>
                       )}
-                      {m.analysis?.has_unsourced_claim && (
-                        <span className="text-[10px] bg-amber-100 text-amber-800 rounded px-1.5 py-0.5">
+                      {a?.has_unsourced_claim && (
+                        <button
+                          onClick={() => toggleExpand(m.id)}
+                          className="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-800 rounded px-1.5 py-0.5"
+                        >
                           unsourced
-                        </span>
+                        </button>
                       )}
                       {isPending && (
                         <span className="text-[10px] bg-gray-100 text-gray-700 rounded px-1.5 py-0.5">
                           Analyzing…
                         </span>
                       )}
+                      {m._optimistic && !isPending && (
+                        <span className="text-[10px] text-gray-400">sending…</span>
+                      )}
                       <span className="text-[10px] text-gray-500">{timeLabel(m.received_at)}</span>
                     </div>
+                    {showWhy && isExpanded && (
+                      <div className="mt-1.5 pt-1.5 border-t border-gray-200 text-[11px] text-gray-700 space-y-1">
+                        {a?.target_flag && a?.target_notes && (
+                          <div>
+                            <span className="font-semibold text-red-700">Targeting: </span>
+                            {a.target_notes}
+                          </div>
+                        )}
+                        {a?.has_unsourced_claim && a?.factuality_notes && (
+                          <div>
+                            <span className="font-semibold text-amber-800">Claim: </span>
+                            {a.factuality_notes}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -322,7 +406,7 @@ export default function ChatSimulator({
           <button
             onClick={send}
             disabled={sending || !text.trim() || !active}
-            className="rounded-full bg-wa-accent text-white w-10 h-10 flex items-center justify-center disabled:opacity-50"
+            className="rounded-full bg-wa-accent text-white w-11 h-11 flex items-center justify-center disabled:opacity-50 text-lg"
             title="Send"
           >
             {sending ? "…" : "➤"}

@@ -3,7 +3,11 @@ import os
 from typing import Optional, Dict
 from datetime import datetime, date, timedelta
 from collections import defaultdict
-from fastapi import FastAPI, Depends, HTTPException, Request, Query
+import logging
+from fastapi import FastAPI, Depends, HTTPException, Request, Query, Header
+
+log = logging.getLogger("ygl-mod.api")
+logging.basicConfig(level=logging.INFO)
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -42,13 +46,25 @@ def _backfill_analyses_safe():
     try:
         analyzed_ids = {a.message_id for a in db.query(models.Analysis.message_id).all()}
         msgs = db.query(models.Message).filter(~models.Message.id.in_(analyzed_ids)).all() if analyzed_ids else db.query(models.Message).all()
+        log.info("backfill starting for %d messages", len(msgs))
+        ok = err = 0
         for m in msgs:
             try:
                 _run_analysis(db, m)
-            except Exception:
-                pass
+                ok += 1
+            except Exception as e:
+                err += 1
+                log.exception("backfill analysis failed for message %s: %s", m.id, e)
+        log.info("backfill finished ok=%d err=%d", ok, err)
     finally:
         db.close()
+
+
+def _require_admin(x_admin_token: Optional[str] = Header(default=None)):
+    """If ADMIN_TOKEN env var is set, require matching X-Admin-Token header. Otherwise allow."""
+    expected = os.getenv("ADMIN_TOKEN")
+    if expected and x_admin_token != expected:
+        raise HTTPException(401, "admin token required")
 
 
 @app.get("/")
@@ -62,7 +78,7 @@ def healthz():
 
 
 @app.get("/debug/ai")
-def debug_ai():
+def debug_ai(_=Depends(_require_admin)):
     """Quick liveness check for the Anthropic client. Demo-only diagnostic."""
     has_key = bool(os.getenv("ANTHROPIC_API_KEY"))
     client_ok = ai._client is not None
@@ -314,7 +330,12 @@ def dashboard_data(group_id: Optional[str] = None, db: Session = Depends(get_db)
     week_start = now - timedelta(days=7)
 
     msgs = db.query(models.Message).filter(models.Message.group_id == g.id).all()
-    analyses = {a.message_id: a for a in db.query(models.Analysis).all()}
+    msg_ids = [m.id for m in msgs]
+    analyses = (
+        {a.message_id: a for a in db.query(models.Analysis).filter(models.Analysis.message_id.in_(msg_ids)).all()}
+        if msg_ids else {}
+    )
+    recent_cutoff = now - timedelta(days=7)
 
     today_total = sum(m.word_count or 0 for m in msgs if m.received_at >= today_start)
     week_total = sum(m.word_count or 0 for m in msgs if m.received_at >= week_start)
@@ -339,9 +360,11 @@ def dashboard_data(group_id: Optional[str] = None, db: Session = Depends(get_db)
             "out_of_band": out_of_band,
         })
 
-    # Held forwards
+    # Held forwards (last 7 days)
     held = []
     for m in msgs:
+        if m.received_at < recent_cutoff:
+            continue
         if m.is_forwarded and m.forward_friction_status == "held":
             mem = next((x for x in members if x.id == m.member_id), None)
             held.append({
@@ -355,9 +378,11 @@ def dashboard_data(group_id: Optional[str] = None, db: Session = Depends(get_db)
                 },
             })
 
-    # Targeted messages
+    # Targeted messages (last 7 days)
     targeted = []
     for m in msgs:
+        if m.received_at < recent_cutoff:
+            continue
         a = analyses.get(m.id)
         if a and a.target_flag:
             mem = next((x for x in members if x.id == m.member_id), None)
@@ -410,7 +435,7 @@ def dashboard_data(group_id: Optional[str] = None, db: Session = Depends(get_db)
 
 
 @app.post("/admin/reseed")
-def admin_reseed(db: Session = Depends(get_db)):
+def admin_reseed(_=Depends(_require_admin), db: Session = Depends(get_db)):
     run_seed(force=True)
     import threading
     threading.Thread(target=_backfill_analyses_safe, daemon=True).start()
@@ -418,10 +443,18 @@ def admin_reseed(db: Session = Depends(get_db)):
 
 
 @app.post("/admin/reanalyze")
-def admin_reanalyze(db: Session = Depends(get_db)):
+def admin_reanalyze(_=Depends(_require_admin), db: Session = Depends(get_db)):
     """Force-re-run analysis on every message. Useful after rotating ANTHROPIC_API_KEY."""
     db.query(models.Analysis).delete()
     db.commit()
     import threading
     threading.Thread(target=_backfill_analyses_safe, daemon=True).start()
     return {"ok": True, "queued": True}
+
+
+@app.get("/backfill/status")
+def backfill_status(db: Session = Depends(get_db)):
+    """Tell the UI how many messages still need analysis."""
+    total = db.query(models.Message).count()
+    analyzed = db.query(models.Analysis.message_id).distinct().count()
+    return {"total": total, "analyzed": analyzed, "pending": max(0, total - analyzed)}

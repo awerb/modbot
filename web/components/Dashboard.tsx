@@ -49,6 +49,8 @@ export default function Dashboard({
   const [copied, setCopied] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const [backfillPending, setBackfillPending] = useState(0);
+
   async function load() {
     try {
       const r = await jget(`/dashboard/data`);
@@ -58,6 +60,12 @@ export default function Dashboard({
     } catch (e: any) {
       setLoadError(e?.message || "load failed");
       onConnection?.(false);
+    }
+    try {
+      const s = await jget(`/backfill/status`);
+      setBackfillPending(s.pending ?? 0);
+    } catch {
+      // non-fatal
     }
   }
 
@@ -100,9 +108,18 @@ export default function Dashboard({
   return (
     <div className="h-full overflow-y-auto bg-gray-50">
       <div className="bg-forest text-white px-4 py-3">
-        <div className="text-xs uppercase tracking-wider opacity-80">YGL Mod</div>
-        <div className="font-semibold">{data.group.name}</div>
-        <div className="text-xs opacity-80">{data.today_message_count} messages today</div>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <div className="text-xs uppercase tracking-wider opacity-80">YGL Mod</div>
+            <div className="font-semibold">{data.group.name}</div>
+            <div className="text-xs opacity-80">{data.today_message_count} messages today</div>
+          </div>
+          {backfillPending > 0 && (
+            <span className="text-[10px] bg-white/20 text-white rounded-full px-2 py-0.5 self-center" title="Analysis backlog">
+              Analyzing {backfillPending}…
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Member tiles */}

@@ -4,13 +4,28 @@ import ChatSimulator from "@/components/ChatSimulator";
 import Dashboard from "@/components/Dashboard";
 import { jpost } from "@/lib/api";
 
+const ARCHETYPES: { initial: string; color: string; name: string; tag: string; line: string }[] = [
+  { initial: "A", color: "#0ea5e9", name: "Amara Okonkwo", tag: "Bridge-Builder", line: "Asks questions, summarizes, steelmans before disagreeing." },
+  { initial: "D", color: "#dc2626", name: "Daniel Stern", tag: "Provocateur", line: "Forwards articles, drops stats without sources, tends to absolutes." },
+  { initial: "M", color: "#16a34a", name: "Mei Lin", tag: "Quiet Expert", line: "Posts rarely but with sourced, careful long-form takes." },
+  { initial: "R", color: "#f59e0b", name: "Rafael Cardozo", tag: "Personal-Stakes Voice", line: "Brings lived experience; pushes back when others abstract." },
+  { initial: "P", color: "#8b5cf6", name: "Priya Anand", tag: "Synthesizer", line: "Looks for the structural frame; can talk past actual concerns." },
+];
+
 export default function Page() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [connected, setConnected] = useState<boolean | null>(null);
+  const [chatOk, setChatOk] = useState<boolean | null>(null);
+  const [dashOk, setDashOk] = useState<boolean | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [legendOpen, setLegendOpen] = useState(false);
 
   const bumpDashboard = () => setRefreshKey((k) => k + 1);
+
+  const connected =
+    chatOk === null && dashOk === null
+      ? null
+      : chatOk !== false && dashOk !== false;
 
   async function resetDemo() {
     if (!confirm("Wipe and reseed the demo data?")) return;
@@ -41,6 +56,13 @@ export default function Page() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setLegendOpen((v) => !v)}
+            className="text-xs rounded border border-gray-300 px-2 py-1 hover:bg-gray-50"
+            title="Who are these characters?"
+          >
+            {legendOpen ? "Hide who's who" : "Who's who"}
+          </button>
           <span
             className={`text-[11px] flex items-center gap-1 px-2 py-0.5 rounded-full border ${
               connected === false
@@ -79,13 +101,39 @@ export default function Page() {
         </div>
       </div>
 
+      {/* Archetype legend */}
+      {legendOpen && (
+        <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
+          <div className="text-xs text-gray-600 mb-2">
+            You become one of these characters in the chat. Each one is a real moderation challenge.
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
+            {ARCHETYPES.map((a) => (
+              <div key={a.name} className="flex items-start gap-2 bg-white border border-gray-200 rounded-md p-2">
+                <div
+                  className="w-7 h-7 rounded-full text-white text-xs font-semibold flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: a.color }}
+                >
+                  {a.initial}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold truncate">{a.name}</div>
+                  <div className="text-[11px] text-gray-500 truncate">{a.tag}</div>
+                  <div className="text-[11px] text-gray-700 mt-0.5">{a.line}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Main split */}
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 md:basis-3/5 p-3 min-w-0">
-          <ChatSimulator onUpdate={bumpDashboard} onConnection={setConnected} />
+          <ChatSimulator onUpdate={bumpDashboard} onConnection={setChatOk} />
         </div>
         <div className="hidden md:block md:basis-2/5 border-l border-gray-200 min-w-0">
-          <Dashboard refreshKey={refreshKey} onConnection={setConnected} />
+          <Dashboard refreshKey={refreshKey} onConnection={setDashOk} />
         </div>
       </div>
 
@@ -106,7 +154,7 @@ export default function Page() {
               </button>
             </div>
             <div className="h-[calc(100%-44px)]">
-              <Dashboard refreshKey={refreshKey} onConnection={setConnected} />
+              <Dashboard refreshKey={refreshKey} onConnection={setDashOk} />
             </div>
           </div>
         </div>

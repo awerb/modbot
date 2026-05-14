@@ -103,17 +103,26 @@ Respond with ONLY a JSON object:
 def target_check(text: str) -> dict:
     if not _client:
         return _stub_target(text)
-    prompt = f"""You moderate a discussion group on difficult topics. The bar for flagging:
+    prompt = f"""You moderate a Young Global Leaders discussion group on difficult topics. Apply this bar precisely:
 
-"Would a reasonable member feel demeaned or targeted, OR would a group they belong to be demeaned?"
+FLAG only if the speaker themselves is demeaning a group, OR if a reasonable member of an affected group would feel targeted by what the speaker is asserting.
 
-Messages ABOUT race/gender/religion/politics as topics should NOT flag. Only TARGETING flags.
+Do NOT flag:
+- Discussion of race/gender/religion/politics/class as topics
+- Quoting or paraphrasing someone else's targeting language in order to push back, critique, or call it out
+- Personal experience or lived testimony, even when heated
+- Sharp policy disagreement that doesn't disparage people
+
+Examples:
+- "These migrants are gaming the system" → FLAG (speaker demeans a group)
+- "When you say 'these people from those countries,' please be careful — that language demeans whole nationalities" → DO NOT FLAG (speaker is critiquing the language, not using it)
+- "I'm tired of how this conversation keeps reducing my community to a labor input" → DO NOT FLAG (personal pushback, not targeting)
 
 Message:
 \"\"\"{text}\"\"\"
 
 Respond with ONLY a JSON object:
-{{"target_flag": bool, "category": "race"|"gender"|"religion"|"class"|"other"|null, "topic_only": bool, "severity": "low"|"med"|"high", "notes": str, "topic_tags": [str]}}"""
+{{"target_flag": bool, "category": "race"|"gender"|"religion"|"class"|"other"|null, "topic_only": bool, "severity": "low"|"med"|"high", "notes": str (one sentence explaining the call), "topic_tags": [str]}}"""
     try:
         resp = _client.messages.create(
             model=MODEL_SMART,
