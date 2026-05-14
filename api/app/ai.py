@@ -7,7 +7,11 @@ from typing import Optional, List, Dict
 
 try:
     from anthropic import Anthropic
-    _client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY")) if os.getenv("ANTHROPIC_API_KEY") else None
+    _client = (
+        Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"), timeout=20.0, max_retries=1)
+        if os.getenv("ANTHROPIC_API_KEY")
+        else None
+    )
 except Exception:
     _client = None
 

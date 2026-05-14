@@ -26,11 +26,27 @@ app.add_middleware(
 @app.on_event("startup")
 def _startup():
     Base.metadata.create_all(bind=engine)
-    # Auto-seed if empty
     db = SessionLocal()
     try:
         if db.query(models.Group).count() == 0:
             run_seed(force=False)
+    finally:
+        db.close()
+    # Kick off backfill in a background thread so startup isn't blocked by AI calls
+    import threading
+    threading.Thread(target=_backfill_analyses_safe, daemon=True).start()
+
+
+def _backfill_analyses_safe():
+    db = SessionLocal()
+    try:
+        analyzed_ids = {a.message_id for a in db.query(models.Analysis.message_id).all()}
+        msgs = db.query(models.Message).filter(~models.Message.id.in_(analyzed_ids)).all() if analyzed_ids else db.query(models.Message).all()
+        for m in msgs:
+            try:
+                _run_analysis(db, m)
+            except Exception:
+                pass
     finally:
         db.close()
 
@@ -378,4 +394,16 @@ def dashboard_data(group_id: Optional[str] = None, db: Session = Depends(get_db)
 @app.post("/admin/reseed")
 def admin_reseed(db: Session = Depends(get_db)):
     run_seed(force=True)
+    import threading
+    threading.Thread(target=_backfill_analyses_safe, daemon=True).start()
     return {"ok": True}
+
+
+@app.post("/admin/reanalyze")
+def admin_reanalyze(db: Session = Depends(get_db)):
+    """Force-re-run analysis on every message. Useful after rotating ANTHROPIC_API_KEY."""
+    db.query(models.Analysis).delete()
+    db.commit()
+    import threading
+    threading.Thread(target=_backfill_analyses_safe, daemon=True).start()
+    return {"ok": True, "queued": True}

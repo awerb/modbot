@@ -37,17 +37,27 @@ type DashData = {
   yesterday_artifact: { date: string; summary: string; suggested_question: string } | null;
 };
 
-export default function Dashboard({ refreshKey }: { refreshKey: number }) {
+export default function Dashboard({
+  refreshKey,
+  onConnection,
+}: {
+  refreshKey: number;
+  onConnection?: (ok: boolean) => void;
+}) {
   const [data, setData] = useState<DashData | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   async function load() {
     try {
       const r = await jget(`/dashboard/data`);
       setData(r);
-    } catch (e) {
-      console.error(e);
+      setLoadError(null);
+      onConnection?.(true);
+    } catch (e: any) {
+      setLoadError(e?.message || "load failed");
+      onConnection?.(false);
     }
   }
 
@@ -76,8 +86,13 @@ export default function Dashboard({ refreshKey }: { refreshKey: number }) {
 
   if (!data) {
     return (
-      <div className="h-full flex items-center justify-center text-gray-500 text-sm">
-        Loading dashboard…
+      <div className="h-full flex flex-col items-center justify-center text-gray-500 text-sm gap-2 p-4 text-center">
+        <div>Loading dashboard…</div>
+        {loadError && (
+          <div className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1 max-w-xs">
+            {loadError}. Retrying every 3s.
+          </div>
+        )}
       </div>
     );
   }

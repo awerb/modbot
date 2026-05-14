@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal, engine, Base
-from .models import Group, Member, Message
+from .models import Group, Member, Message, Analysis, DailyArtifact
 
 
 ARCHETYPES = [
@@ -52,8 +52,12 @@ def seed(force: bool = False):
         if existing and not force:
             return existing.id
         if existing and force:
-            db.query(Message).filter(Message.group_id == existing.id).delete()
-            db.query(Member).filter(Member.group_id == existing.id).delete()
+            msg_ids = [mid for (mid,) in db.query(Message.id).filter(Message.group_id == existing.id).all()]
+            if msg_ids:
+                db.query(Analysis).filter(Analysis.message_id.in_(msg_ids)).delete(synchronize_session=False)
+            db.query(DailyArtifact).filter(DailyArtifact.group_id == existing.id).delete(synchronize_session=False)
+            db.query(Message).filter(Message.group_id == existing.id).delete(synchronize_session=False)
+            db.query(Member).filter(Member.group_id == existing.id).delete(synchronize_session=False)
             db.delete(existing)
             db.commit()
 

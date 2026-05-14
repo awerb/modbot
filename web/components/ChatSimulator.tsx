@@ -27,15 +27,17 @@ type Msg = {
 };
 
 function timeLabel(iso: string) {
-  const d = new Date(iso);
+  const d = new Date(iso + (iso.endsWith("Z") ? "" : "Z"));
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function dayLabel(iso: string) {
-  const d = new Date(iso);
+  const d = new Date(iso + (iso.endsWith("Z") ? "" : "Z"));
   const today = new Date();
-  const ms = today.setHours(0, 0, 0, 0) - new Date(d.toDateString()).getTime();
-  const days = Math.round(ms / (1000 * 60 * 60 * 24));
+  today.setHours(0, 0, 0, 0);
+  const that = new Date(d);
+  that.setHours(0, 0, 0, 0);
+  const days = Math.round((today.getTime() - that.getTime()) / (1000 * 60 * 60 * 24));
   if (days === 0) return "Today";
   if (days === 1) return "Yesterday";
   return d.toLocaleDateString();
@@ -43,8 +45,10 @@ function dayLabel(iso: string) {
 
 export default function ChatSimulator({
   onUpdate,
+  onConnection,
 }: {
   onUpdate?: () => void;
+  onConnection?: (ok: boolean) => void;
 }) {
   const [members, setMembers] = useState<Member[]>([]);
   const [groupName, setGroupName] = useState("");
@@ -53,19 +57,40 @@ export default function ChatSimulator({
   const [text, setText] = useState("");
   const [forwarded, setForwarded] = useState(false);
   const [sending, setSending] = useState(false);
-  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottom = useRef(true);
 
   async function loadMembers() {
-    const r = await jget(`/chat/members`);
-    setMembers(r.members);
-    setGroupName(r.group_name);
-    if (!active && r.members.length) setActive(r.members[0].id);
+    try {
+      const r = await jget(`/chat/members`);
+      setMembers(r.members);
+      setGroupName(r.group_name);
+      setActive((prev) => prev || (r.members[0]?.id ?? null));
+      onConnection?.(true);
+    } catch (e: any) {
+      onConnection?.(false);
+    }
   }
 
   async function loadMessages() {
-    const r = await jget(`/chat/messages`);
-    setMessages(r.messages);
+    try {
+      const r = await jget(`/chat/messages`);
+      setMessages(r.messages);
+      // Clear pending IDs that now have an analysis
+      setPendingIds((prev) => {
+        if (prev.size === 0) return prev;
+        const next = new Set(prev);
+        for (const m of r.messages) {
+          if (m.analysis && next.has(m.id)) next.delete(m.id);
+        }
+        return next;
+      });
+      onConnection?.(true);
+    } catch (e: any) {
+      onConnection?.(false);
+    }
   }
 
   useEffect(() => {
@@ -75,11 +100,21 @@ export default function ChatSimulator({
     return () => clearInterval(t);
   }, []);
 
+  // Auto-scroll only when user was already near the bottom
   useEffect(() => {
-    if (scrollerRef.current) {
-      scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
+    const el = scrollerRef.current;
+    if (!el) return;
+    if (stickToBottom.current) {
+      el.scrollTop = el.scrollHeight;
     }
-  }, [messages.length]);
+  }, [messages.length, pendingIds.size]);
+
+  function handleScroll() {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottom.current = distFromBottom < 80;
+  }
 
   const activeMember = useMemo(
     () => members.find((m) => m.id === active) || null,
@@ -89,21 +124,32 @@ export default function ChatSimulator({
   async function send() {
     if (!text.trim() || !active) return;
     setSending(true);
+    setError(null);
+    const sentText = text.trim();
+    const sentForwarded = forwarded;
+    setText("");
+    setForwarded(false);
+    stickToBottom.current = true;
     try {
-      const r = await jpost(`/test/simulate-message`, {
-        member_id: active,
-        text: text.trim(),
-        is_forwarded: forwarded,
-      });
-      setPendingId(r.message_id);
-      setText("");
-      setForwarded(false);
+      const r = await jpost(
+        `/test/simulate-message`,
+        { member_id: active, text: sentText, is_forwarded: sentForwarded },
+        { timeoutMs: 45000 }
+      );
+      if (r?.message_id) {
+        setPendingIds((p) => {
+          const n = new Set(p);
+          n.add(r.message_id);
+          return n;
+        });
+      }
       await loadMessages();
       onUpdate?.();
-      // clear pending shortly after server confirms
-      setTimeout(() => setPendingId(null), 600);
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      setError(e?.message || "send failed");
+      // restore input so user doesn't lose it
+      setText(sentText);
+      setForwarded(sentForwarded);
     } finally {
       setSending(false);
     }
@@ -139,7 +185,16 @@ export default function ChatSimulator({
       </div>
 
       {/* Messages */}
-      <div ref={scrollerRef} className="flex-1 overflow-y-auto wa-bg px-4 py-3 space-y-1">
+      <div
+        ref={scrollerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto wa-bg px-4 py-3 space-y-1"
+      >
+        {messages.length === 0 && (
+          <div className="text-center text-xs text-gray-500 py-8">
+            No messages yet. Pick a character and post something.
+          </div>
+        )}
         {grouped.map((g, gi) => (
           <div key={gi}>
             <div className="flex justify-center my-2">
@@ -149,6 +204,7 @@ export default function ChatSimulator({
             </div>
             {g.items.map((m) => {
               const own = m.member.id === active;
+              const isPending = pendingIds.has(m.id) && !m.analysis;
               return (
                 <div
                   key={m.id}
@@ -180,7 +236,7 @@ export default function ChatSimulator({
                     <div className="text-[14px] text-gray-900 whitespace-pre-wrap leading-snug">
                       {m.text}
                     </div>
-                    <div className="flex items-center justify-end gap-1 mt-0.5">
+                    <div className="flex items-center justify-end gap-1 mt-0.5 flex-wrap">
                       {m.analysis?.target_flag && (
                         <span className="text-[10px] bg-red-100 text-red-700 rounded px-1.5 py-0.5">
                           flagged
@@ -191,7 +247,7 @@ export default function ChatSimulator({
                           unsourced
                         </span>
                       )}
-                      {pendingId === m.id && !m.analysis && (
+                      {isPending && (
                         <span className="text-[10px] bg-gray-100 text-gray-700 rounded px-1.5 py-0.5">
                           Analyzing…
                         </span>
@@ -206,10 +262,10 @@ export default function ChatSimulator({
         ))}
       </div>
 
-      {/* Character switcher */}
+      {/* Character switcher + input */}
       <div className="border-t border-gray-200 bg-gray-50 px-3 py-2">
         <div className="flex items-center justify-between mb-2">
-          <div className="text-xs text-gray-600">
+          <div className="text-xs text-gray-600 truncate">
             Posting as:{" "}
             <span className="font-semibold" style={{ color: activeMember?.avatar_color }}>
               {activeMember?.display_name || "—"}
@@ -218,16 +274,16 @@ export default function ChatSimulator({
               <span className="text-gray-400">· {activeMember.archetype}</span>
             )}
           </div>
-          <label className="flex items-center gap-1 text-xs text-gray-600 cursor-pointer">
+          <label className="flex items-center gap-1 text-xs text-gray-600 cursor-pointer shrink-0">
             <input
               type="checkbox"
               checked={forwarded}
               onChange={(e) => setForwarded(e.target.checked)}
             />
-            send as forwarded
+            forwarded
           </label>
         </div>
-        <div className="flex items-center gap-2 mb-2 overflow-x-auto">
+        <div className="flex items-center gap-2 mb-2 overflow-x-auto pb-1">
           {members.map((m) => (
             <button
               key={m.id}
@@ -244,6 +300,11 @@ export default function ChatSimulator({
             </button>
           ))}
         </div>
+        {error && (
+          <div className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1 mb-2">
+            {error}
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <button className="text-gray-400 hover:text-gray-600 text-xl px-1" title="attach (stub)">📎</button>
           <input
@@ -264,7 +325,7 @@ export default function ChatSimulator({
             className="rounded-full bg-wa-accent text-white w-10 h-10 flex items-center justify-center disabled:opacity-50"
             title="Send"
           >
-            ➤
+            {sending ? "…" : "➤"}
           </button>
         </div>
       </div>

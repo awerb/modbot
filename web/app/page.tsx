@@ -2,12 +2,28 @@
 import { useState } from "react";
 import ChatSimulator from "@/components/ChatSimulator";
 import Dashboard from "@/components/Dashboard";
+import { jpost } from "@/lib/api";
 
 export default function Page() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [connected, setConnected] = useState<boolean | null>(null);
+  const [resetting, setResetting] = useState(false);
 
   const bumpDashboard = () => setRefreshKey((k) => k + 1);
+
+  async function resetDemo() {
+    if (!confirm("Wipe and reseed the demo data?")) return;
+    setResetting(true);
+    try {
+      await jpost(`/admin/reseed`, {});
+      bumpDashboard();
+    } catch (e) {
+      alert("Reset failed. Is the API up?");
+    } finally {
+      setResetting(false);
+    }
+  }
 
   return (
     <div className="h-screen w-screen flex flex-col">
@@ -24,21 +40,52 @@ export default function Page() {
             </div>
           </div>
         </div>
-        <button
-          onClick={() => setDrawerOpen(true)}
-          className="md:hidden text-xs rounded border border-gray-300 px-2 py-1"
-        >
-          Dashboard
-        </button>
+        <div className="flex items-center gap-2">
+          <span
+            className={`text-[11px] flex items-center gap-1 px-2 py-0.5 rounded-full border ${
+              connected === false
+                ? "border-red-300 text-red-700 bg-red-50"
+                : connected
+                  ? "border-emerald-300 text-emerald-700 bg-emerald-50"
+                  : "border-gray-300 text-gray-500 bg-gray-50"
+            }`}
+            title="API connection"
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                connected === false
+                  ? "bg-red-500"
+                  : connected
+                    ? "bg-emerald-500"
+                    : "bg-gray-400"
+              }`}
+            />
+            {connected === false ? "offline" : connected ? "online" : "..."}
+          </span>
+          <button
+            onClick={resetDemo}
+            disabled={resetting}
+            className="text-xs rounded border border-gray-300 px-2 py-1 hover:bg-gray-50 disabled:opacity-50"
+            title="Wipe and reseed the demo data"
+          >
+            {resetting ? "Resetting…" : "Reset demo"}
+          </button>
+          <button
+            onClick={() => setDrawerOpen(true)}
+            className="md:hidden text-xs rounded border border-gray-300 px-2 py-1"
+          >
+            Dashboard
+          </button>
+        </div>
       </div>
 
       {/* Main split */}
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 md:basis-3/5 p-3 min-w-0">
-          <ChatSimulator onUpdate={bumpDashboard} />
+          <ChatSimulator onUpdate={bumpDashboard} onConnection={setConnected} />
         </div>
         <div className="hidden md:block md:basis-2/5 border-l border-gray-200 min-w-0">
-          <Dashboard refreshKey={refreshKey} />
+          <Dashboard refreshKey={refreshKey} onConnection={setConnected} />
         </div>
       </div>
 
@@ -59,7 +106,7 @@ export default function Page() {
               </button>
             </div>
             <div className="h-[calc(100%-44px)]">
-              <Dashboard refreshKey={refreshKey} />
+              <Dashboard refreshKey={refreshKey} onConnection={setConnected} />
             </div>
           </div>
         </div>
