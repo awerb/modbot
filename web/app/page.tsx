@@ -19,7 +19,7 @@ const RULES: Rule[] = [
   { code: "R1", name: "Floor balance", status: "live", logic: "Per-member word share over rolling 7d. Flag any member outside 10–40%. Surfaces members being talked over and members dominating." },
   { code: "R2", name: "Steelman", status: "live", logic: "When a message is classified as disagreement, check if the speaker first acknowledged the other view. If not, and the message is hot (≥0.4), emit a steelman_missing alert with a yellow icon on the message." },
   { code: "R3", name: "Heat + pause", status: "live", logic: "Each message gets a 0–1 heat score from Sonnet (intensity, not topic). Rolling average over last 5. If the last 3 messages each score ≥0.65, emit pause_suggested with a Sonnet-drafted pause message. 30-min cooldown between firings." },
-  { code: "R5", name: "Forward friction", status: "live", logic: "Forwarded messages enter a held state and surface in the held-forwards panel. Moderator releases or discards. Reduces unsourced viral content laundering through the group." },
+  { code: "R5", name: "Hold forwards for review", status: "live", logic: "Forwarded content (articles, screenshots, stats from elsewhere) is intercepted and surfaced in a separate panel on the dashboard. The moderator releases or drops it. Stops the group from spending half an hour arguing about a chart nobody can find the source for." },
   { code: "R6", name: "Target vs topic", status: "live", logic: "Targeting language is flagged separately from topic chips. The Sonnet prompt is given worked examples so quoting language to push back is NOT flagged as targeting, while actually demeaning a group IS." },
   { code: "R7", name: "Question / Assertion ratio", status: "live", logic: "Rolling 7-day count of question messages over assertion messages. Below ~0.2 = assertion-heavy debate. Soft warning on the dashboard, no alert." },
   { code: "R8", name: "Quiet-member reward", status: "live", logic: "Member with <10% week share who posts a substantive (≥25-word) message in the last 24h emits a quiet_member_substantive alert and gets referenced by name in tomorrow's suggested question." },
@@ -67,6 +67,9 @@ export default function Page() {
   const [roadmapOpen, setRoadmapOpen] = useState(false);
 
   function togglePanel(name: "legend" | "rules" | "roadmap") {
+    // The three reference panels live on the demo tab. If the user is on About,
+    // hop back to demo so the panel is visible.
+    if (tab !== "demo") setTab("demo");
     setLegendOpen(name === "legend" ? !legendOpen : false);
     setRulesOpen(name === "rules" ? !rulesOpen : false);
     setRoadmapOpen(name === "roadmap" ? !roadmapOpen : false);
@@ -109,51 +112,44 @@ export default function Page() {
     <div className="h-screen w-screen flex flex-col">
       {/* Top bar */}
       <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-2 gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="w-8 h-8 rounded-md bg-forest text-white font-bold flex items-center justify-center">
-              Y
-            </div>
-            <div>
-              <div className="text-sm font-semibold leading-tight">YGL Mod</div>
-              <div className="text-[11px] text-gray-500 leading-tight">moderation tool</div>
-            </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="w-8 h-8 rounded-md bg-forest text-white font-bold flex items-center justify-center">
+            Y
           </div>
-          <div className="flex items-center gap-1 ml-2">
-            <TabBtn active={tab === "demo"} onClick={() => setTab("demo")}>
-              Demo
-            </TabBtn>
-            <TabBtn active={tab === "about"} onClick={() => setTab("about")}>
-              About + roadmap
-            </TabBtn>
+          <div>
+            <div className="text-sm font-semibold leading-tight">YGL Mod</div>
+            <div className="text-[11px] text-gray-500 leading-tight">moderation tool</div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {tab === "demo" && (
-            <>
-              <button
-                onClick={() => togglePanel("legend")}
-                className={`text-xs rounded border px-2 py-1 ${legendOpen ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
-                title="Who are these characters?"
-              >
-                Who's who
-              </button>
-              <button
-                onClick={() => togglePanel("rules")}
-                className={`text-xs rounded border px-2 py-1 ${rulesOpen ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
-                title="What rules drive the moderation signals?"
-              >
-                Moderation rules
-              </button>
-              <button
-                onClick={() => togglePanel("roadmap")}
-                className={`text-xs rounded border px-2 py-1 ${roadmapOpen ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
-                title="What's done and what's planned"
-              >
-                Roadmap
-              </button>
-            </>
-          )}
+          <button
+            onClick={() => togglePanel("legend")}
+            className={`text-xs rounded border px-2 py-1 ${legendOpen ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
+            title="Who are these characters?"
+          >
+            Who's who
+          </button>
+          <button
+            onClick={() => togglePanel("rules")}
+            className={`text-xs rounded border px-2 py-1 ${rulesOpen ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
+            title="What rules drive the moderation signals?"
+          >
+            Moderation rules
+          </button>
+          <button
+            onClick={() => togglePanel("roadmap")}
+            className={`text-xs rounded border px-2 py-1 ${roadmapOpen ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
+            title="What's done and what's planned"
+          >
+            Roadmap
+          </button>
+          <button
+            onClick={() => setTab(tab === "about" ? "demo" : "about")}
+            className={`text-xs rounded border px-2 py-1 ${tab === "about" ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
+            title="Technical description of what's built"
+          >
+            About
+          </button>
           <span
             className={`text-[11px] flex items-center gap-1 px-2 py-0.5 rounded-full border ${
               connected === false
@@ -323,17 +319,3 @@ export default function Page() {
   );
 }
 
-function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`text-xs px-3 py-1 rounded-full transition-colors ${
-        active
-          ? "bg-forest text-white"
-          : "text-gray-600 hover:bg-gray-100"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}

@@ -127,7 +127,7 @@ After each analysis, `_recompute_state_and_alerts` updates `group_state` (rollin
 | R1 | Floor balance | Per-member word share, flag outside 10–40% |
 | R2 | Steelman | On disagreement, check that the other view was acknowledged; emit `steelman_missing` when not |
 | R3 | Heat + pause | Per-message heat 0–1, rolling avg of last 5; sustained ≥0.65 emits `pause_suggested` with a Sonnet-drafted pause message; 30-min cooldown |
-| R5 | Forward friction | Forwarded messages get held, dashboard shows Release / Discard (stubs) |
+| R5 | Hold forwards for review | Forwarded content gets intercepted and surfaced in a separate panel; moderator releases or drops it |
 | R6 | Target vs topic | Targeting language is flagged separately from topic chips |
 | R7 | Q / A ratio | 7-day rolling ratio of questions to assertions; flagged when <0.2 |
 | R8 | Quiet-member reward | Quiet members (<10% share) who post substantively trigger an alert and get referenced by name in tomorrow's question |

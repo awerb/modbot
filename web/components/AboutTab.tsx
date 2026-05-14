@@ -60,32 +60,15 @@ export default function AboutTab() {
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold mb-2">Roadmap</h2>
-          <div className="space-y-3 text-[13px]">
-            <Block title="Phase 3 — real wiring">
-              <ul className="list-disc pl-5 space-y-1">
-                <li>Evolution API webhook for real WhatsApp groups (currently stubbed)</li>
-                <li>Outbound: moderator-approved pause prompts and steelman invitations get sent back to the group</li>
-                <li>Multi-group support (one moderator, several pilots)</li>
-                <li>Member-side opt-in and consent flow</li>
-              </ul>
-            </Block>
-            <Block title="Phase 4 — depth">
-              <ul className="list-disc pl-5 space-y-1">
-                <li>Per-member tone calibration: learn each member's baseline so heat is read relative to them, not in absolute terms</li>
-                <li>Thread-level coherence: detect when a debate is talking past itself vs. closing in on a real disagreement</li>
-                <li>Source attestation library: track which sources have been credibly used in the group and which have been debunked</li>
-                <li>Daily report email to moderator with everything the dashboard shows, plus suggested 1:1 follow-ups</li>
-              </ul>
-            </Block>
-            <Block title="Open questions">
-              <ul className="list-disc pl-5 space-y-1">
-                <li>How aggressive should auto-flagging be vs. surfacing to the moderator? Current default: never auto-send, always human-approved.</li>
-                <li>Heat is calibrated to one type of group; on a more reserved group, heat 0.4 may be the threshold not 0.65. Per-group tuning?</li>
-                <li>Should "steelman_missing" alerts age out, or accumulate as a longer-term concern about a member's conversational style?</li>
-                <li>Repair detection is generous by design; false positives are OK, false negatives are not. Worth quantifying with a held-out set.</li>
-              </ul>
-            </Block>
+          <h2 className="text-lg font-semibold mb-2">Open questions</h2>
+          <ul className="list-disc pl-5 space-y-1 text-[13px]">
+            <li>How aggressive should auto-flagging be vs. surfacing to the moderator? Current default: never auto-send, always human-approved.</li>
+            <li>Heat is calibrated to one type of group; on a more reserved group, heat 0.4 may be the threshold not 0.65. Per-group tuning?</li>
+            <li>Should steelman-missing alerts age out, or accumulate as a longer-term concern about a member's conversational style?</li>
+            <li>Repair detection is generous by design; false positives are OK, false negatives are not. Worth quantifying against a held-out set.</li>
+          </ul>
+          <div className="text-[12px] text-gray-500 mt-2">
+            See the Roadmap button in the topbar for what's shipped vs. queued.
           </div>
         </section>
 
@@ -139,11 +122,3 @@ function Rule({ code, name, status, children }: { code: string; name: string; st
   );
 }
 
-function Block({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-md border border-gray-200 p-3 bg-gray-50">
-      <div className="font-semibold mb-1">{title}</div>
-      <div className="text-gray-700">{children}</div>
-    </div>
-  );
-}
