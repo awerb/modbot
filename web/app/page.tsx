@@ -13,6 +13,46 @@ const ARCHETYPES: { initial: string; color: string; name: string; tag: string; l
   { initial: "P", color: "#8b5cf6", name: "Priya Anand", tag: "Strident Voice", line: "Names harm directly, emotional, takes the opposite position to Michael." },
 ];
 
+type Rule = { code: string; name: string; status: "live" | "soon"; logic: string };
+
+const RULES: Rule[] = [
+  { code: "R1", name: "Floor balance", status: "live", logic: "Per-member word share over rolling 7d. Flag any member outside 10–40%. Surfaces members being talked over and members dominating." },
+  { code: "R2", name: "Steelman", status: "live", logic: "When a message is classified as disagreement, check if the speaker first acknowledged the other view. If not, and the message is hot (≥0.4), emit a steelman_missing alert with a yellow icon on the message." },
+  { code: "R3", name: "Heat + pause", status: "live", logic: "Each message gets a 0–1 heat score from Sonnet (intensity, not topic). Rolling average over last 5. If the last 3 messages each score ≥0.65, emit pause_suggested with a Sonnet-drafted pause message. 30-min cooldown between firings." },
+  { code: "R5", name: "Forward friction", status: "live", logic: "Forwarded messages enter a held state and surface in the held-forwards panel. Moderator releases or discards. Reduces unsourced viral content laundering through the group." },
+  { code: "R6", name: "Target vs topic", status: "live", logic: "Targeting language is flagged separately from topic chips. The Sonnet prompt is given worked examples so quoting language to push back is NOT flagged as targeting, while actually demeaning a group IS." },
+  { code: "R7", name: "Question / Assertion ratio", status: "live", logic: "Rolling 7-day count of question messages over assertion messages. Below ~0.2 = assertion-heavy debate. Soft warning on the dashboard, no alert." },
+  { code: "R8", name: "Quiet-member reward", status: "live", logic: "Member with <10% week share who posts a substantive (≥25-word) message in the last 24h emits a quiet_member_substantive alert and gets referenced by name in tomorrow's suggested question." },
+  { code: "R9", name: "Repair detection", status: "live", logic: "Apologies, walk-backs, acknowledging harm, thanking for a correction. Generously detected by Sonnet. Green star on the message, increments member's repair_count, emits a repair_detected alert. Repair is the most important signal in a healthy thread." },
+  { code: "R10", name: "Exit velocity", status: "live", logic: "Member had a contested exchange (heat ≥0.5 or disagreement) in the last 7d AND has been silent for ≥48h. Emits exit_velocity alert visible only to the moderator. The window where someone is about to leave the group quietly." },
+];
+
+type RoadmapItem = { status: "done" | "next" | "later"; title: string; line: string };
+
+const ROADMAP: RoadmapItem[] = [
+  // Phase 1
+  { status: "done", title: "Chat simulator + dashboard", line: "WhatsApp-style chat with 5 archetype characters, optimistic send, click-to-expand AI reasoning. Forest-green moderator dashboard with floor balance, held forwards, targeted flags, topics, daily summary." },
+  { status: "done", title: "AI analysis pipeline", line: "Factuality / source check (Haiku), targeting check (Sonnet with worked examples for quoting vs. using language), deep classification (Sonnet)." },
+  { status: "done", title: "Rules R1, R5, R6", line: "Floor balance, forward friction, target-vs-topic separation." },
+  { status: "done", title: "Daily summary + suggested question", line: "Sonnet generates a neutral 4–6 bullet summary and a single seed question that references quiet members by name." },
+  // Phase 2
+  { status: "done", title: "Heat, steelman, repair, exit velocity", line: "Rules R2, R3, R9, R10 with moderator alerts. Pause-suggested banner with Sonnet-drafted pause message ready to paste." },
+  { status: "done", title: "Q/A ratio + quiet-member reward", line: "Rules R7, R8. Rolling 7d ratio in the dashboard top strip, quiet-member alert and tomorrow's-question integration." },
+  { status: "done", title: "Hardening", line: "Admin endpoints token-gated, 7d cap on flagged lists, graceful API fallback when no Anthropic key, optimistic send, AI timeouts." },
+  { status: "done", title: "Tests + docs", line: "Pytest suite (18 unit + 15 integration), TypeScript clean, README + ARCHITECTURE + CHANGELOG." },
+  // Phase 3
+  { status: "next", title: "Evolution API webhook (real WhatsApp)", line: "Wire /webhook/evolution to a live WhatsApp instance, dedupe by message_id, persist raw_payload." },
+  { status: "next", title: "Outbound: moderator-approved sends", line: "Approved pause prompts and steelman invitations get posted back to the group with a moderator byline. Always human-approved, never auto-send." },
+  { status: "next", title: "Multi-group support", line: "One moderator, several pilots. Group switcher in the top bar, group_id scoping already in place server-side." },
+  { status: "next", title: "Member consent and opt-in flow", line: "Members get a one-time disclosure about what's analyzed and what's stored, plus a way to opt out of specific signals (e.g. heat scoring)." },
+  { status: "next", title: "Background analysis (don't block sends)", line: "Move the 3 AI calls out of the simulate-message request path. Return the message_id immediately, let polling fill in the analysis. Avoids 45s-timeout edge cases." },
+  // Phase 4
+  { status: "later", title: "Per-member tone calibration", line: "Heat scored relative to each member's baseline, not absolute. Some members are dispassionate by default, some are intense, both are healthy." },
+  { status: "later", title: "Thread coherence", line: "Detect when a debate is talking past itself vs. closing in on a real disagreement. Hard. Probably structured + LLM hybrid." },
+  { status: "later", title: "Source attestation library", line: "Track which sources have been credibly used in the group and which have been debunked in-thread. Speeds up factuality_check and gives the moderator continuity." },
+  { status: "later", title: "Daily moderator email digest", line: "Everything the dashboard shows, plus suggested 1:1 follow-ups (e.g. who looks like they're about to disengage)." },
+];
+
 type Tab = "demo" | "about";
 
 export default function Page() {
@@ -23,6 +63,14 @@ export default function Page() {
   const [dashOk, setDashOk] = useState<boolean | null>(null);
   const [resetting, setResetting] = useState(false);
   const [legendOpen, setLegendOpen] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const [roadmapOpen, setRoadmapOpen] = useState(false);
+
+  function togglePanel(name: "legend" | "rules" | "roadmap") {
+    setLegendOpen(name === "legend" ? !legendOpen : false);
+    setRulesOpen(name === "rules" ? !rulesOpen : false);
+    setRoadmapOpen(name === "roadmap" ? !roadmapOpen : false);
+  }
 
   const bumpDashboard = () => setRefreshKey((k) => k + 1);
 
@@ -69,13 +117,29 @@ export default function Page() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {tab === "demo" && (
-            <button
-              onClick={() => setLegendOpen((v) => !v)}
-              className="text-xs rounded border border-gray-300 px-2 py-1 hover:bg-gray-50"
-              title="Who are these characters?"
-            >
-              {legendOpen ? "Hide who's who" : "Who's who"}
-            </button>
+            <>
+              <button
+                onClick={() => togglePanel("legend")}
+                className={`text-xs rounded border px-2 py-1 ${legendOpen ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
+                title="Who are these characters?"
+              >
+                Who's who
+              </button>
+              <button
+                onClick={() => togglePanel("rules")}
+                className={`text-xs rounded border px-2 py-1 ${rulesOpen ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
+                title="What rules drive the moderation signals?"
+              >
+                Moderation rules
+              </button>
+              <button
+                onClick={() => togglePanel("roadmap")}
+                className={`text-xs rounded border px-2 py-1 ${roadmapOpen ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
+                title="What's done and what's planned"
+              >
+                Roadmap
+              </button>
+            </>
           )}
           <span
             className={`text-[11px] flex items-center gap-1 px-2 py-0.5 rounded-full border ${
@@ -121,7 +185,7 @@ export default function Page() {
 
       {/* Archetype legend */}
       {tab === "demo" && legendOpen && (
-        <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
+        <div className="border-b border-gray-200 bg-gray-50 px-4 py-3 max-h-[40vh] overflow-y-auto">
           <div className="text-xs text-gray-600 mb-2">
             You become one of these characters in the chat. Each one is a real moderation challenge.
           </div>
@@ -141,6 +205,66 @@ export default function Page() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Moderation rules */}
+      {tab === "demo" && rulesOpen && (
+        <div className="border-b border-gray-200 bg-gray-50 px-4 py-3 max-h-[50vh] overflow-y-auto">
+          <div className="text-xs text-gray-600 mb-2">
+            Nine facilitation rules drive every signal you see. Each runs on a specific shape of AI output and writes to a specific table.
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+            {RULES.map((r) => (
+              <div key={r.code} className="rounded-md border border-gray-200 bg-white p-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px] font-mono bg-gray-100 rounded px-1.5 py-0.5">{r.code}</span>
+                  <span className="text-xs font-semibold">{r.name}</span>
+                  <span className={`text-[9px] ml-auto px-1.5 py-0.5 rounded-full ${r.status === "live" ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
+                    {r.status}
+                  </span>
+                </div>
+                <div className="text-[11px] text-gray-700 leading-snug">{r.logic}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Roadmap */}
+      {tab === "demo" && roadmapOpen && (
+        <div className="border-b border-gray-200 bg-gray-50 px-4 py-3 max-h-[55vh] overflow-y-auto">
+          <div className="text-xs text-gray-600 mb-2">
+            Where we are and where we're going.
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {(["done", "next", "later"] as const).map((status) => {
+              const items = ROADMAP.filter((r) => r.status === status);
+              const meta = {
+                done: { label: "Shipped", style: "bg-emerald-50 border-emerald-200 text-emerald-700", marker: "✓" },
+                next: { label: "Next (phase 3)", style: "bg-sky-50 border-sky-200 text-sky-700", marker: "→" },
+                later: { label: "Later (phase 4+)", style: "bg-gray-100 border-gray-200 text-gray-600", marker: "⋯" },
+              }[status];
+              return (
+                <div key={status} className="space-y-2">
+                  <div className={`text-[11px] font-semibold rounded px-2 py-1 border ${meta.style}`}>
+                    {meta.label} · {items.length}
+                  </div>
+                  {items.map((r, i) => (
+                    <div key={i} className="rounded-md border border-gray-200 bg-white p-2">
+                      <div className="flex items-start gap-1.5">
+                        <span className="text-gray-400 text-[11px] mt-0.5">{meta.marker}</span>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold">{r.title}</div>
+                          <div className="text-[11px] text-gray-700 mt-0.5 leading-snug">{r.line}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
