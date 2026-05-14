@@ -25,10 +25,17 @@ type Msg = {
     topic_tags: string[];
     factuality_notes?: string | null;
     target_notes?: string | null;
+    heat_score?: number | null;
+    is_disagreement?: boolean;
+    steelman_present?: boolean;
+    is_question?: boolean;
+    is_repair?: boolean;
+    repair_notes?: string | null;
   } | null;
-  // optimistic-send marker (not from server)
   _optimistic?: boolean;
 };
+
+type PauseBanner = { draft: string; alertId: string } | null;
 
 function timeLabel(iso: string) {
   const d = new Date(iso + (iso.endsWith("Z") ? "" : "Z"));
@@ -65,6 +72,7 @@ export default function ChatSimulator({
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [pauseBanner, setPauseBanner] = useState<PauseBanner>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const stickToBottom = useRef(true);
 
@@ -108,12 +116,33 @@ export default function ChatSimulator({
     }
   }
 
+  async function loadPauseAlert() {
+    try {
+      const r = await jget(`/alerts`);
+      const pause = (r.alerts || []).find((a: any) => a.kind === "pause_suggested");
+      if (pause) setPauseBanner({ draft: pause.payload?.draft || "Things look heated. Consider pausing.", alertId: pause.id });
+      else setPauseBanner(null);
+    } catch {}
+  }
+
   useEffect(() => {
     loadMembers();
     loadMessages();
-    const t = setInterval(loadMessages, 2500);
+    loadPauseAlert();
+    const t = setInterval(() => {
+      loadMessages();
+      loadPauseAlert();
+    }, 2500);
     return () => clearInterval(t);
   }, []);
+
+  async function dismissPause() {
+    if (!pauseBanner) return;
+    try {
+      await jpost(`/alerts/${pauseBanner.alertId}/resolve`, {});
+      setPauseBanner(null);
+    } catch {}
+  }
 
   // Auto-scroll only when user was already near the bottom
   useEffect(() => {
@@ -238,6 +267,33 @@ export default function ChatSimulator({
         <div className="text-xs opacity-80">Simulator</div>
       </div>
 
+      {/* Pause-suggested banner */}
+      {pauseBanner && (
+        <div className="bg-orange-50 border-b border-orange-300 px-3 py-2 text-[12px] text-orange-900 flex items-start gap-2">
+          <div className="text-orange-600 mt-0.5">⏸</div>
+          <div className="flex-1">
+            <div className="font-semibold text-[11px] uppercase tracking-wider">Pause suggested</div>
+            <div className="mt-0.5 whitespace-pre-wrap">{pauseBanner.draft}</div>
+          </div>
+          <div className="flex flex-col gap-1">
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(pauseBanner.draft);
+              }}
+              className="text-[11px] rounded border border-orange-400 bg-white px-2 py-0.5 text-orange-900"
+            >
+              Copy
+            </button>
+            <button
+              onClick={dismissPause}
+              className="text-[11px] rounded border border-orange-300 bg-white px-2 py-0.5 text-orange-700"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
       <div
         ref={scrollerRef}
@@ -295,6 +351,20 @@ export default function ChatSimulator({
                       {m.text}
                     </div>
                     <div className="flex items-center justify-end gap-1 mt-0.5 flex-wrap">
+                      {a?.is_repair && (
+                        <span className="text-[10px] text-emerald-700" title={a.repair_notes || "repair detected"}>★</span>
+                      )}
+                      {a?.is_disagreement && !a?.steelman_present && (a?.heat_score || 0) >= 0.4 && (
+                        <span className="text-[10px] text-yellow-700" title="disagreement without steelman">⚠</span>
+                      )}
+                      {a?.is_question && (
+                        <span className="text-[10px] text-sky-700" title="question">?</span>
+                      )}
+                      {(a?.heat_score || 0) >= 0.65 && (
+                        <span className="text-[10px] bg-orange-100 text-orange-800 rounded px-1.5 py-0.5" title={`heat ${a?.heat_score?.toFixed(2)}`}>
+                          🔥 hot
+                        </span>
+                      )}
                       {a?.target_flag && (
                         <button
                           onClick={() => toggleExpand(m.id)}

@@ -14,16 +14,16 @@ ARCHETYPES = [
         "avatar_initial": "A",
     },
     {
-        "display_name": "Daniel Stern",
+        "display_name": "Michael Standup",
         "archetype": "The Provocateur",
         "avatar_color": "#dc2626",  # red-600
-        "avatar_initial": "D",
+        "avatar_initial": "M",
     },
     {
         "display_name": "Mei Lin",
         "archetype": "The Quiet Expert",
         "avatar_color": "#16a34a",  # green-600
-        "avatar_initial": "M",
+        "avatar_initial": "L",
     },
     {
         "display_name": "Rafael Cardozo",
@@ -33,7 +33,7 @@ ARCHETYPES = [
     },
     {
         "display_name": "Priya Anand",
-        "archetype": "The Synthesizer",
+        "archetype": "The Strident Voice",
         "avatar_color": "#8b5cf6",  # violet-500
         "avatar_initial": "P",
     },
@@ -73,57 +73,57 @@ def seed(force: bool = False):
             members[a["display_name"]] = m
 
         now = datetime.utcnow()
-        d2 = now - timedelta(days=2)
-        d1 = now - timedelta(days=1)
 
         # (display_name, text, hours_ago, is_forwarded)
         script = [
-            # Day -2: kickoff
-            ("Amara Okonkwo", "Morning all. Picking up the thread from last week. Topic this week: immigration policy and economic mobility. Let's actually try to disagree well.", 48, False),
-            ("Daniel Stern", "Easy one. Open borders cost the U.S. taxpayer $130B a year. The data is clear. Anyone arguing otherwise is being sentimental.", 47, True),
-            ("Priya Anand", "Daniel, I think the question isn't the gross cost, it's the second-order effects on labor markets and fiscal contribution over a 20-year horizon.", 46, False),
-            ("Rafael Cardozo", "Priya, with respect, when you say 'second-order effects' you are talking about my cousins. People. Not a labor market input.", 46, False),
-            ("Amara Okonkwo", "Rafael that's fair. Daniel, can you share the source on the $130B? I want to look at the methodology.", 45, False),
-            ("Daniel Stern", "It's been widely reported. FAIR, Heritage, take your pick.", 45, False),
-            ("Mei Lin", "Worth noting FAIR's methodology includes US-born children of immigrants as costs but excludes their lifetime tax contributions. NBER's 2017 review puts the second-generation fiscal impact at roughly +$259k per immigrant in present value. Happy to share the paper.", 44, False),
-            ("Daniel Stern", "Sure Mei, send it.", 43, False),
-            ("Priya Anand", "This is the thing about these debates, the framing decides the answer before the data does.", 42, False),
-            ("Daniel Stern", "Forwarded: 'Why Sweden's open-door policy collapsed' (blog post, no byline)", 41, True),
-            ("Amara Okonkwo", "Daniel, that piece has been pretty thoroughly debunked. The Swedish stats it cites are misattributed.", 40, False),
-            ("Rafael Cardozo", "I've represented asylum seekers for eleven years. The 'they don't want to integrate' line is almost always projection.", 39, False),
-            ("Priya Anand", "Rafael, I hear you, but at a population level integration outcomes do vary significantly by cohort and policy regime.", 38, False),
-            ("Rafael Cardozo", "Priya, 'cohort' is a clean word for 'these people from those countries.' Please be careful.", 38, False),
-            ("Amara Okonkwo", "Let's pause. Priya I think you mean cohort in the demographic sense. Rafael I think you're flagging how that language lands. Both real.", 37, False),
+            # ===== Day -2: kickoff =====
+            ("Amara Okonkwo", "Morning all. New week, hardest topic yet. Gaza, the Iran strikes, and the question of whether the US is an imperial power. Let's actually try to disagree well.", 48, False),
+            ("Michael Standup", "America isn't an empire. We are the stabilizer. Pull US presence out of the Gulf and you'd have a regional war by sundown. The data is clear.", 47, False),
+            ("Priya Anand", "Michael, please. We bombed seven countries last year. We're arming a campaign in Gaza that the ICJ found plausibly genocidal. You can call that stabilization if you want. The bodies don't care what you call it.", 46, False),
+            ("Rafael Cardozo", "I represent asylum seekers from Yemen, Sudan, and now Gaza. Two of my clients lost their entire families in Rafah to US-supplied munitions. This isn't a frame debate. It's a moral emergency.", 46, False),
+            ("Amara Okonkwo", "Mei, you've worked on the dual-use export data. Anything to ground us?", 45, False),
+            ("Mei Lin", "Yes. As of February the State Department had approved over $17.9B in arms transfers to Israel since October 7. CSIS estimates roughly 70 percent of munitions used in Gaza are US-origin. Posting the sourced summary later today.", 44, False),
+            ("Michael Standup", "Mei that's tonnage not policy. Israel has a right to defend itself after the worst antisemitic massacre since 1945. You can't moralize that away with a procurement table.", 43, False),
+            ("Priya Anand", "Nobody is moralizing anything away. Forty thousand dead. Whole bloodlines gone. Hospitals, journalists, aid workers. If your framework can't say that's wrong without a five-step justification then your framework is the problem.", 42, False),
+            ("Michael Standup", "Forwarded: 'Why the Houthi threat justified the strikes' (Substack, no byline)", 41, True),
+            ("Amara Okonkwo", "Michael, that piece has been pretty thoroughly debunked. The casualty numbers in it are off by an order of magnitude.", 40, False),
+            ("Rafael Cardozo", "We keep doing this. Michael forwards a piece, we spend an hour cleaning it up, and the actual question, are we complicit, never gets asked.", 39, False),
+            ("Priya Anand", "Of course we're complicit. We pay for it. We veto every ceasefire. We protect the people pulling the trigger from accountability at The Hague. Saying anything else is a lie we tell ourselves so we can keep sleeping.", 38, False),
+            ("Michael Standup", "Priya you sound like a freshman seminar. The world is more complicated than a slogan. Iran funds Hezbollah, Hamas, the Houthis. We do not exist in a vacuum.", 37, False),
+            ("Amara Okonkwo", "Hold on. Michael, 'you sound like a freshman seminar' is a swipe, not an argument. Priya is naming things that are documented. Can we keep this on the substance.", 37, False),
+            ("Mei Lin", "On Iran specifically: the IAEA's most recent quarterly report shows enrichment at the Fordow facility at 84 percent purity, not weapons grade but close. The strikes hit centrifuge halls but the program isn't ended. It's accelerated.", 36, False),
 
-            # Day -1
-            ("Daniel Stern", "Look, the honest truth is most of these migrants are economic opportunists, not refugees. We have to stop pretending otherwise. They're gaming the system and frankly a lot of them are people who couldn't make it work in their own countries.", 30, False),  # borderline-targeting line
-            ("Amara Okonkwo", "Daniel that last sentence crosses a line for me. We can debate policy without writing off whole groups of people.", 29, False),
-            ("Daniel Stern", "Fine. Policy point stands.", 29, False),
-            ("Mei Lin", "On the empirical claim: a 2022 meta-analysis across 17 OECD countries found the labor-force participation gap between asylum-route and economic-route migrants closes within 7 years on average. Posting the cite later.", 28, False),
-            ("Priya Anand", "Mei this is useful. The 7-year window probably matters more for policy than the snapshot.", 27, False),
-            ("Daniel Stern", "Forwarded: 'Border crossings hit record high' (chart, no source link)", 26, True),
-            ("Amara Okonkwo", "Daniel can you stop forwarding things without sources? It makes it hard to engage.", 25, False),
-            ("Rafael Cardozo", "Honestly, every time we have this conversation the same person dumps the same kind of content and the rest of us spend an hour cleaning it up.", 24, False),
-            ("Priya Anand", "Can we agree on a frame? I'd suggest: 1) what do we owe people inside the border, 2) what process for people at it, 3) what obligations to people outside it. Different answers, but different questions.", 23, False),
-            ("Amara Okonkwo", "Priya yes, that's a useful split. Let's try it.", 22, False),
-            ("Rafael Cardozo", "On (1), there is no economic mobility without legal status. Period. Everything else is talking around it.", 22, False),
-            ("Daniel Stern", "Legal status as a precondition is exactly the wrong incentive structure.", 21, False),
-            ("Mei Lin", "There's evidence both ways here. Cities that extended municipal ID and work authorization saw wage gains for documented and undocumented workers both. The Boston study from 2019 is a good starting point.", 20, False),
-            ("Amara Okonkwo", "Bookmarking Mei's points, she keeps doing the actual work in this thread.", 19, False),
+            # ===== Day -1 =====
+            ("Michael Standup", "The strikes worked. Iran's leadership is humiliated, the program is set back years, and the entire Middle East is safer because of it. People who can't see that are blinded by their politics.", 30, False),
+            ("Priya Anand", "Michael that is not an argument it is propaganda. Mei just told you the program is accelerated. You're literally responding to data with vibes.", 29, False),
+            ("Michael Standup", "Look, the honest truth is most of the people screaming 'imperialism' have never run a country, never made a hard call, and frankly couldn't tell you where Iran is on a map. They're useful idiots for Tehran whether they know it or not.", 28, False),  # borderline targeting
+            ("Amara Okonkwo", "Michael. That last sentence crosses a line for me. You can argue the policy without writing off everyone who disagrees as a useful idiot. That's the kind of thing that ends conversations.", 28, False),
+            ("Michael Standup", "Fair. I'll pull that back. The strategic point stands.", 27, False),
+            ("Rafael Cardozo", "Thank you Amara.", 27, False),
+            ("Priya Anand", "I appreciate the walk-back Michael. Genuinely. I get heated because this isn't abstract for me. My cousin works for an aid org in Khan Younis. He hasn't been heard from in eleven days.", 26, False),
+            ("Michael Standup", "Priya, I'm sorry. I didn't know.", 26, False),
+            ("Mei Lin", "There is a serious empirical literature on whether US foreign deployments reduce or produce regional conflict. The Posen / Brooks debate is the cleanest framing I've found. Neither side gets to skip it. I'll link tomorrow.", 25, False),
+            ("Michael Standup", "Forwarded: 'Gaza death toll inflated by Hamas Ministry' (blog post, screenshots, no source link)", 24, True),
+            ("Amara Okonkwo", "Michael, can you stop forwarding things without sources? Especially on death tolls. It's beneath us.", 24, False),
+            ("Priya Anand", "Forty thousand. UN, WHO, ICRC, Lancet. Every serious institution confirms it. Stop laundering denial through your group chat.", 23, False),
+            ("Rafael Cardozo", "On the imperialism question. I think the word does work. We have 750 military bases in 80 countries. We dictate which currencies clear which trades. We decide who gets sanctioned and who doesn't. If that's not empire then the word means nothing.", 22, False),
+            ("Priya Anand", "Yes. Exactly. The reason we're squeamish about the word is because we like the benefits. Cheap gas, cheap clothes, dominant currency. Empire pays well at home as long as the violence happens elsewhere.", 21, False),
+            ("Michael Standup", "And the alternative is what, Priya. China runs the Pacific. Russia runs Eastern Europe. Iran runs the Gulf. Tell me which of those worlds is more humane than the one you're describing.", 20, False),
+            ("Mei Lin", "That's a false trilemma but it's the right disagreement to have. The actual empirical question is whether US primacy is necessary for global stability or whether it produces the instability it claims to prevent. Both have evidence. The honest answer is contested.", 19, False),
+            ("Amara Okonkwo", "Mei, thank you. That's the conversation I want us in.", 18, False),
 
-            # Day 0
-            ("Priya Anand", "Coming back to this. Did anyone read the Brookings piece I sent yesterday?", 10, False),
-            ("Daniel Stern", "Brookings is partisan. Not interested.", 10, False),
-            ("Rafael Cardozo", "Daniel, you forwarded Heritage on Tuesday.", 9, False),
-            ("Daniel Stern", "Different.", 9, False),
-            ("Amara Okonkwo", "Ok. Let's get concrete. What's one policy each of you would defend in front of someone who disagreed?", 8, False),
-            ("Rafael Cardozo", "Path to legal status for long-term undocumented residents with work history. Pragmatic and humane.", 7, False),
-            ("Priya Anand", "Points-based reform tied to regional labor needs, with sunset review every 5 years.", 7, False),
-            ("Daniel Stern", "End birthright citizenship, end chain migration, restore the 1990 caps.", 6, False),
-            ("Mei Lin", "Expanded H-1B with portability and a guaranteed-permanency track for STEM PhDs trained in-country.", 6, False),
-            ("Amara Okonkwo", "Good. Now: which of those four could you live with, even if you wouldn't pick it?", 5, False),
-            ("Priya Anand", "Rafael's, with conditions.", 4, False),
-            ("Rafael Cardozo", "Mei's, fully. Priya's, with skepticism about the sunset review getting captured.", 3, False),
+            # ===== Day 0 =====
+            ("Priya Anand", "I want to come back to Gaza. We keep drifting to strategy because it's easier. A ten-year-old in Deir al-Balah was killed yesterday by a US-made bomb. That happened. Whatever frame you use, that happened.", 10, False),
+            ("Michael Standup", "Priya, you can't run a foreign policy on individual tragedies. Every war has them. The question is what produces fewer of them over a decade, not what feels most acute today.", 9, False),
+            ("Rafael Cardozo", "Michael that sentence is exactly why people get angry. You said 'individual tragedies.' Forty thousand is not individual. And the framework you're defending is the one that produced them. You don't get to use the math both ways.", 9, False),
+            ("Amara Okonkwo", "Pause. Let's get concrete. Each of you, one policy you would defend in front of someone who lost a family member.", 8, False),
+            ("Rafael Cardozo", "Immediate unconditional ceasefire, conditional arms transfers, ICC jurisdiction accepted by the US.", 7, False),
+            ("Priya Anand", "Same plus reparations, war crimes prosecutions for everyone in the chain of command, and recognition of Palestine. We can do this. We choose not to.", 7, False),
+            ("Mei Lin", "Conditional arms transfers tied to compliance benchmarks, accelerated ICJ proceedings, regional security architecture that includes Iran. Hardest of these is the third.", 6, False),
+            ("Michael Standup", "Sustained credible deterrence, full backing of Israeli self-defense, full sanctions on Iran, and a clear off-ramp once Hamas releases hostages and disarms.", 6, False),
+            ("Amara Okonkwo", "Good. Now whose position can you live with even if you wouldn't pick it?", 5, False),
+            ("Priya Anand", "Mei's. I would fight for more but I could vote for it.", 4, False),
+            ("Rafael Cardozo", "Mei's, fully. Michael's, no, because it doesn't pass the test of looking my client in the eye.", 3, False),
         ]
 
         for name, text, hours_ago, is_fwd in script:

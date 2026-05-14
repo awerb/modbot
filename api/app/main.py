@@ -1,19 +1,21 @@
 from __future__ import annotations
 import os
-from typing import Optional, Dict
+import logging
+from typing import Optional, Dict, List
 from datetime import datetime, date, timedelta
 from collections import defaultdict
-import logging
 from fastapi import FastAPI, Depends, HTTPException, Request, Query, Header
-
-log = logging.getLogger("ygl-mod.api")
-logging.basicConfig(level=logging.INFO)
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import text as sql_text
 
 from .db import SessionLocal, engine, Base, get_db
 from . import models, schemas, ai
 from .seed import seed as run_seed
+
+
+log = logging.getLogger("ygl-mod.api")
+logging.basicConfig(level=logging.INFO)
 
 
 app = FastAPI(title="YGL Mod API")
@@ -27,16 +29,38 @@ app.add_middleware(
 )
 
 
+PHASE2_COLUMNS = [
+    ("heat_score", "DOUBLE PRECISION"),
+    ("is_disagreement", "BOOLEAN DEFAULT FALSE"),
+    ("steelman_present", "BOOLEAN DEFAULT FALSE"),
+    ("is_question", "BOOLEAN DEFAULT FALSE"),
+    ("is_assertion", "BOOLEAN DEFAULT FALSE"),
+    ("is_repair", "BOOLEAN DEFAULT FALSE"),
+    ("repair_notes", "TEXT"),
+    ("references_member_id", "VARCHAR"),
+]
+
+
+def _ensure_phase2_columns():
+    """Add phase-2 columns to analyses table if missing. Postgres-safe."""
+    with engine.begin() as conn:
+        for col, ddl in PHASE2_COLUMNS:
+            try:
+                conn.execute(sql_text(f"ALTER TABLE analyses ADD COLUMN IF NOT EXISTS {col} {ddl}"))
+            except Exception as e:
+                log.warning("ALTER analyses ADD %s failed (likely already exists): %s", col, e)
+
+
 @app.on_event("startup")
 def _startup():
     Base.metadata.create_all(bind=engine)
+    _ensure_phase2_columns()
     db = SessionLocal()
     try:
         if db.query(models.Group).count() == 0:
             run_seed(force=False)
     finally:
         db.close()
-    # Kick off backfill in a background thread so startup isn't blocked by AI calls
     import threading
     threading.Thread(target=_backfill_analyses_safe, daemon=True).start()
 
@@ -56,12 +80,16 @@ def _backfill_analyses_safe():
                 err += 1
                 log.exception("backfill analysis failed for message %s: %s", m.id, e)
         log.info("backfill finished ok=%d err=%d", ok, err)
+        # After backfill, run a single pass to compute group/member state and emit alerts
+        try:
+            _recompute_state_and_alerts(db)
+        except Exception as e:
+            log.exception("state recompute failed: %s", e)
     finally:
         db.close()
 
 
 def _require_admin(x_admin_token: Optional[str] = Header(default=None)):
-    """If ADMIN_TOKEN env var is set, require matching X-Admin-Token header. Otherwise allow."""
     expected = os.getenv("ADMIN_TOKEN")
     if expected and x_admin_token != expected:
         raise HTTPException(401, "admin token required")
@@ -79,7 +107,6 @@ def healthz():
 
 @app.get("/debug/ai")
 def debug_ai(_=Depends(_require_admin)):
-    """Quick liveness check for the Anthropic client. Demo-only diagnostic."""
     has_key = bool(os.getenv("ANTHROPIC_API_KEY"))
     client_ok = ai._client is not None
     sample = ai.target_check("Test message about immigration policy.")
@@ -122,7 +149,6 @@ def chat_messages(group_id: Optional[str] = None, since: Optional[str] = None, d
     msgs = q.order_by(models.Message.received_at.asc()).all()
     members = {m.id: m for m in db.query(models.Member).filter(models.Member.group_id == g.id).all()}
 
-    # Pull analyses for these messages
     ids = [m.id for m in msgs]
     analyses_by_msg: Dict[str, "models.Analysis"] = {}
     if ids:
@@ -155,6 +181,12 @@ def chat_messages(group_id: Optional[str] = None, since: Optional[str] = None, d
                 "topic_tags": a.topic_tags or [],
                 "factuality_notes": a.factuality_notes,
                 "target_notes": a.target_notes,
+                "heat_score": a.heat_score,
+                "is_disagreement": a.is_disagreement,
+                "steelman_present": a.steelman_present,
+                "is_question": a.is_question,
+                "is_repair": a.is_repair,
+                "repair_notes": a.repair_notes,
             },
         })
     return {"group_id": g.id, "group_name": g.name, "messages": out}
@@ -202,12 +234,28 @@ def simulate_message(body: schemas.SimulateMessageIn, db: Session = Depends(get_
     db.add(msg)
     db.commit()
     db.refresh(msg)
-    # Run analysis inline so client can refresh after the call returns.
     analysis = _run_analysis(db, msg)
+    try:
+        _recompute_state_and_alerts(db)
+    except Exception as e:
+        log.exception("state recompute failed after simulate: %s", e)
     return {"message_id": msg.id, "analysis_id": analysis.id if analysis else None}
 
 
 # ---------- Analyze ----------
+
+def _transcript_tail(db: Session, group_id: str, before: datetime, n: int = 6) -> str:
+    rows = (
+        db.query(models.Message, models.Member)
+        .join(models.Member, models.Member.id == models.Message.member_id)
+        .filter(models.Message.group_id == group_id, models.Message.received_at < before)
+        .order_by(models.Message.received_at.desc())
+        .limit(n)
+        .all()
+    )
+    rows = list(reversed(rows))
+    return "\n".join(f"{mem.display_name}: {m.text}" for (m, mem) in rows)
+
 
 def _run_analysis(db: Session, msg: models.Message) -> "models.Analysis | None":
     existing = db.query(models.Analysis).filter(models.Analysis.message_id == msg.id).first()
@@ -215,6 +263,21 @@ def _run_analysis(db: Session, msg: models.Message) -> "models.Analysis | None":
         return existing
     fact = ai.factuality_check(msg.text, msg.is_forwarded)
     tgt = ai.target_check(msg.text)
+    ctx = _transcript_tail(db, msg.group_id, msg.received_at, n=6)
+    deep = ai.deep_analysis(msg.text, ctx)
+
+    # Resolve references_member name -> id
+    ref_member_id = None
+    ref_name = deep.get("references_member")
+    if ref_name:
+        ref = (
+            db.query(models.Member)
+            .filter(models.Member.group_id == msg.group_id, models.Member.display_name == ref_name)
+            .first()
+        )
+        if ref:
+            ref_member_id = ref.id
+
     a = models.Analysis(
         message_id=msg.id,
         factuality_score=fact.get("confidence"),
@@ -225,6 +288,14 @@ def _run_analysis(db: Session, msg: models.Message) -> "models.Analysis | None":
         target_notes=tgt.get("notes"),
         topic_tags=tgt.get("topic_tags") or [],
         model="haiku+sonnet" if os.getenv("ANTHROPIC_API_KEY") else "stub",
+        heat_score=deep.get("heat_score"),
+        is_disagreement=bool(deep.get("is_disagreement")),
+        steelman_present=bool(deep.get("steelman_present")),
+        is_question=bool(deep.get("is_question")),
+        is_assertion=bool(deep.get("is_assertion")),
+        is_repair=bool(deep.get("is_repair")),
+        repair_notes=deep.get("repair_notes"),
+        references_member_id=ref_member_id,
     )
     db.add(a)
     db.commit()
@@ -248,13 +319,160 @@ def analyze(message_id: str, db: Session = Depends(get_db)):
 
 @app.post("/webhook/evolution")
 async def webhook(req: Request, db: Session = Depends(get_db)):
-    # Stub: accept any payload, dedupe by id if present, write loosely
     try:
         body = await req.json()
     except Exception:
         body = {}
-    # No-op for phase 1 beyond logging. Return fast.
     return {"ok": True, "received": bool(body)}
+
+
+# ---------- State + alerts (Phase 2) ----------
+
+def _emit_alert(db: Session, group_id: str, kind: str, payload: dict, dedupe_window_min: int = 30):
+    """Emit an alert unless an unresolved one of the same kind exists within the dedupe window."""
+    cutoff = datetime.utcnow() - timedelta(minutes=dedupe_window_min)
+    existing = (
+        db.query(models.ModeratorAlert)
+        .filter(
+            models.ModeratorAlert.group_id == group_id,
+            models.ModeratorAlert.kind == kind,
+            models.ModeratorAlert.resolved_at.is_(None),
+            models.ModeratorAlert.created_at >= cutoff,
+        )
+        .first()
+    )
+    if existing:
+        return
+    db.add(models.ModeratorAlert(group_id=group_id, kind=kind, payload=payload))
+    db.commit()
+
+
+def _recompute_state_and_alerts(db: Session):
+    g = db.query(models.Group).first()
+    if not g:
+        return
+    members = db.query(models.Member).filter(models.Member.group_id == g.id).all()
+    members_by_id = {m.id: m for m in members}
+
+    msgs = (
+        db.query(models.Message)
+        .filter(models.Message.group_id == g.id)
+        .order_by(models.Message.received_at.asc())
+        .all()
+    )
+    if not msgs:
+        return
+    a_by_msg = {a.message_id: a for a in db.query(models.Analysis).filter(models.Analysis.message_id.in_([m.id for m in msgs])).all()}
+
+    # Rolling heat over last 5 messages
+    last_5 = msgs[-5:]
+    last_5_heats = [(a_by_msg.get(m.id).heat_score if a_by_msg.get(m.id) and a_by_msg.get(m.id).heat_score is not None else 0.0) for m in last_5]
+    rolling = sum(last_5_heats) / len(last_5_heats) if last_5_heats else 0.0
+
+    # Heat threshold: if last 3 messages each above 0.65, suggest pause
+    last_3 = msgs[-3:]
+    hot_streak = (
+        len(last_3) >= 3
+        and all(
+            a_by_msg.get(m.id) and (a_by_msg.get(m.id).heat_score or 0) >= 0.65
+            for m in last_3
+        )
+    )
+
+    # Q/A ratio over last 7d
+    week_ago = datetime.utcnow() - timedelta(days=7)
+    qs = sum(1 for m in msgs if m.received_at >= week_ago and a_by_msg.get(m.id) and a_by_msg.get(m.id).is_question)
+    ass = sum(1 for m in msgs if m.received_at >= week_ago and a_by_msg.get(m.id) and a_by_msg.get(m.id).is_assertion)
+    qa_ratio = (qs / ass) if ass else 0.0
+
+    # Upsert GroupState
+    gs = db.query(models.GroupState).filter(models.GroupState.group_id == g.id).first()
+    if not gs:
+        gs = models.GroupState(group_id=g.id)
+        db.add(gs)
+    gs.rolling_heat = round(rolling, 3)
+    gs.question_assertion_ratio_7d = round(qa_ratio, 3)
+    gs.updated_at = datetime.utcnow()
+    db.commit()
+
+    # Member state recompute
+    for mem in members:
+        ms = db.query(models.MemberState).filter(models.MemberState.member_id == mem.id).first()
+        if not ms:
+            ms = models.MemberState(group_id=g.id, member_id=mem.id)
+            db.add(ms)
+        mem_msgs = [m for m in msgs if m.member_id == mem.id]
+        ms.last_substantive_post_at = next(
+            (m.received_at for m in reversed(mem_msgs) if (m.word_count or 0) >= 25), None
+        )
+        contested = [
+            m for m in mem_msgs
+            if a_by_msg.get(m.id) and (a_by_msg.get(m.id).is_disagreement or (a_by_msg.get(m.id).heat_score or 0) >= 0.5)
+        ]
+        ms.last_contested_exchange_at = contested[-1].received_at if contested else None
+        ms.silent_since = mem_msgs[-1].received_at if mem_msgs else None
+        ms.repair_count = sum(1 for m in mem_msgs if a_by_msg.get(m.id) and a_by_msg.get(m.id).is_repair)
+        ms.steelman_count = sum(1 for m in mem_msgs if a_by_msg.get(m.id) and a_by_msg.get(m.id).is_disagreement and a_by_msg.get(m.id).steelman_present)
+    db.commit()
+
+    # Alerts
+    if hot_streak:
+        prompt_msg = ai.pause_prompt(_transcript_tail(db, g.id, datetime.utcnow(), n=6))
+        _emit_alert(db, g.id, "pause_suggested", {"rolling_heat": rolling, "draft": prompt_msg}, dedupe_window_min=30)
+
+    # Steelman missing: any disagreement message in last 3 without steelman
+    for m in last_3:
+        a = a_by_msg.get(m.id)
+        if a and a.is_disagreement and not a.steelman_present and (a.heat_score or 0) >= 0.4:
+            mem = members_by_id.get(m.member_id)
+            _emit_alert(
+                db, g.id, "steelman_missing",
+                {"message_id": m.id, "member": mem.display_name if mem else "?", "text_snippet": m.text[:160]},
+                dedupe_window_min=10,
+            )
+            break
+
+    # Repair detected: any new repair in last 5
+    for m in last_5:
+        a = a_by_msg.get(m.id)
+        if a and a.is_repair:
+            mem = members_by_id.get(m.member_id)
+            _emit_alert(
+                db, g.id, "repair_detected",
+                {"message_id": m.id, "member": mem.display_name if mem else "?", "notes": a.repair_notes or ""},
+                dedupe_window_min=120,
+            )
+
+    # Exit velocity: member with contested exchange in last 7d but silent >= 48h
+    now = datetime.utcnow()
+    for mem in members:
+        ms = db.query(models.MemberState).filter(models.MemberState.member_id == mem.id).first()
+        if not ms or not ms.last_contested_exchange_at or not ms.silent_since:
+            continue
+        contested = ms.last_contested_exchange_at
+        silent_for = now - ms.silent_since
+        if contested >= now - timedelta(days=7) and silent_for >= timedelta(hours=48):
+            _emit_alert(
+                db, g.id, "exit_velocity",
+                {"member": mem.display_name, "silent_hours": int(silent_for.total_seconds() / 3600)},
+                dedupe_window_min=240,
+            )
+
+    # Quiet member substantive: a member with low word share (< 0.1) who posted a substantive message in last 24h
+    cutoff = now - timedelta(hours=24)
+    week_msgs = [m for m in msgs if m.received_at >= week_ago]
+    week_total = sum(m.word_count or 0 for m in week_msgs) or 1
+    for mem in members:
+        share = sum(m.word_count or 0 for m in week_msgs if m.member_id == mem.id) / week_total
+        if share >= 0.10:
+            continue
+        recent_sub = [m for m in msgs if m.member_id == mem.id and m.received_at >= cutoff and (m.word_count or 0) >= 25]
+        if recent_sub:
+            _emit_alert(
+                db, g.id, "quiet_member_substantive",
+                {"member": mem.display_name, "text_snippet": recent_sub[-1].text[:160]},
+                dedupe_window_min=720,
+            )
 
 
 # ---------- Daily ----------
@@ -278,7 +496,6 @@ def daily_generate(group_id: Optional[str] = None, target_date: Optional[str] = 
     members = {m.id: m for m in db.query(models.Member).filter(models.Member.group_id == g.id).all()}
     transcript = "\n".join(f"{members[m.member_id].display_name}: {m.text}" for m in msgs if m.member_id in members)
 
-    # Quiet member calc: bottom 2 by word count today
     word_share: Dict[str, int] = defaultdict(int)
     last_substantive: Dict[str, str] = {}
     for m in msgs:
@@ -319,15 +536,54 @@ def daily_generate(group_id: Optional[str] = None, target_date: Optional[str] = 
     }
 
 
+# ---------- Alerts ----------
+
+@app.get("/alerts")
+def list_alerts(group_id: Optional[str] = None, db: Session = Depends(get_db)):
+    g = _current_group(db, group_id)
+    rows = (
+        db.query(models.ModeratorAlert)
+        .filter(models.ModeratorAlert.group_id == g.id, models.ModeratorAlert.resolved_at.is_(None))
+        .order_by(models.ModeratorAlert.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    return {
+        "alerts": [
+            {
+                "id": r.id,
+                "kind": r.kind,
+                "payload": r.payload,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.post("/alerts/{alert_id}/resolve")
+def resolve_alert(alert_id: str, db: Session = Depends(get_db)):
+    a = db.query(models.ModeratorAlert).filter(models.ModeratorAlert.id == alert_id).first()
+    if not a:
+        raise HTTPException(404, "alert not found")
+    a.resolved_at = datetime.utcnow()
+    db.commit()
+    return {"ok": True}
+
+
 # ---------- Dashboard ----------
 
 @app.get("/dashboard/data")
 def dashboard_data(group_id: Optional[str] = None, db: Session = Depends(get_db)):
     g = _current_group(db, group_id)
     members = db.query(models.Member).filter(models.Member.group_id == g.id).all()
+    member_states = {ms.member_id: ms for ms in db.query(models.MemberState).filter(models.MemberState.group_id == g.id).all()}
+    gs = db.query(models.GroupState).filter(models.GroupState.group_id == g.id).first()
+
     now = datetime.utcnow()
     today_start = datetime.combine(now.date(), datetime.min.time())
     week_start = now - timedelta(days=7)
+    recent_cutoff = now - timedelta(days=7)
 
     msgs = db.query(models.Message).filter(models.Message.group_id == g.id).all()
     msg_ids = [m.id for m in msgs]
@@ -335,7 +591,6 @@ def dashboard_data(group_id: Optional[str] = None, db: Session = Depends(get_db)
         {a.message_id: a for a in db.query(models.Analysis).filter(models.Analysis.message_id.in_(msg_ids)).all()}
         if msg_ids else {}
     )
-    recent_cutoff = now - timedelta(days=7)
 
     today_total = sum(m.word_count or 0 for m in msgs if m.received_at >= today_start)
     week_total = sum(m.word_count or 0 for m in msgs if m.received_at >= week_start)
@@ -347,6 +602,13 @@ def dashboard_data(group_id: Optional[str] = None, db: Session = Depends(get_db)
         share_today = (wc_today / today_total) if today_total else 0
         share_week = (wc_week / week_total) if week_total else 0
         out_of_band = (share_week < 0.10) or (share_week > 0.40)
+        ms = member_states.get(mem.id)
+        # Exit velocity flag: contested in last 7d, silent >= 48h
+        exit_flag = False
+        if ms and ms.last_contested_exchange_at and ms.silent_since:
+            silent_for = now - ms.silent_since
+            if ms.last_contested_exchange_at >= now - timedelta(days=7) and silent_for >= timedelta(hours=48):
+                exit_flag = True
         member_tiles.append({
             "id": mem.id,
             "display_name": mem.display_name,
@@ -358,9 +620,11 @@ def dashboard_data(group_id: Optional[str] = None, db: Session = Depends(get_db)
             "share_today": round(share_today, 3),
             "share_week": round(share_week, 3),
             "out_of_band": out_of_band,
+            "repair_count": ms.repair_count if ms else 0,
+            "steelman_count": ms.steelman_count if ms else 0,
+            "exit_flag": exit_flag,
         })
 
-    # Held forwards (last 7 days)
     held = []
     for m in msgs:
         if m.received_at < recent_cutoff:
@@ -378,7 +642,6 @@ def dashboard_data(group_id: Optional[str] = None, db: Session = Depends(get_db)
                 },
             })
 
-    # Targeted messages (last 7 days)
     targeted = []
     for m in msgs:
         if m.received_at < recent_cutoff:
@@ -399,11 +662,10 @@ def dashboard_data(group_id: Optional[str] = None, db: Session = Depends(get_db)
                 },
             })
 
-    # Topics in play (aggregate from analyses for last 48h)
     topic_counts: Dict[str, int] = defaultdict(int)
-    cutoff = now - timedelta(hours=48)
+    cutoff48 = now - timedelta(hours=48)
     for m in msgs:
-        if m.received_at < cutoff:
+        if m.received_at < cutoff48:
             continue
         a = analyses.get(m.id)
         if a and a.topic_tags:
@@ -411,7 +673,6 @@ def dashboard_data(group_id: Optional[str] = None, db: Session = Depends(get_db)
                 topic_counts[t] += 1
     topics = sorted(topic_counts.items(), key=lambda kv: -kv[1])[:10]
 
-    # Daily artifact (yesterday)
     yest = (now - timedelta(days=1)).date()
     artifact = (
         db.query(models.DailyArtifact)
@@ -419,9 +680,33 @@ def dashboard_data(group_id: Optional[str] = None, db: Session = Depends(get_db)
         .first()
     )
 
+    # Active alerts
+    alerts = (
+        db.query(models.ModeratorAlert)
+        .filter(models.ModeratorAlert.group_id == g.id, models.ModeratorAlert.resolved_at.is_(None))
+        .order_by(models.ModeratorAlert.created_at.desc())
+        .limit(8)
+        .all()
+    )
+    alert_out = [
+        {"id": a.id, "kind": a.kind, "payload": a.payload, "created_at": a.created_at.isoformat()}
+        for a in alerts
+    ]
+
+    # Repair count week
+    repair_week = sum(
+        1 for m in msgs
+        if m.received_at >= week_start and analyses.get(m.id) and analyses[m.id].is_repair
+    )
+
     return {
         "group": {"id": g.id, "name": g.name},
         "today_message_count": sum(1 for m in msgs if m.received_at >= today_start),
+        "group_state": {
+            "rolling_heat": round(gs.rolling_heat if gs else 0.0, 3),
+            "question_assertion_ratio_7d": round(gs.question_assertion_ratio_7d if gs else 0.0, 3),
+            "repair_count_week": repair_week,
+        },
         "member_tiles": member_tiles,
         "held_forwards": held,
         "targeted_messages": targeted,
@@ -431,12 +716,20 @@ def dashboard_data(group_id: Optional[str] = None, db: Session = Depends(get_db)
             "summary": artifact.summary,
             "suggested_question": artifact.suggested_question,
         },
+        "alerts": alert_out,
     }
 
 
 @app.post("/admin/reseed")
 def admin_reseed(_=Depends(_require_admin), db: Session = Depends(get_db)):
     run_seed(force=True)
+    # also clear state and alerts for the (re)seeded group
+    g = db.query(models.Group).first()
+    if g:
+        db.query(models.ModeratorAlert).filter(models.ModeratorAlert.group_id == g.id).delete()
+        db.query(models.GroupState).filter(models.GroupState.group_id == g.id).delete()
+        db.query(models.MemberState).filter(models.MemberState.group_id == g.id).delete()
+        db.commit()
     import threading
     threading.Thread(target=_backfill_analyses_safe, daemon=True).start()
     return {"ok": True}
@@ -444,8 +737,12 @@ def admin_reseed(_=Depends(_require_admin), db: Session = Depends(get_db)):
 
 @app.post("/admin/reanalyze")
 def admin_reanalyze(_=Depends(_require_admin), db: Session = Depends(get_db)):
-    """Force-re-run analysis on every message. Useful after rotating ANTHROPIC_API_KEY."""
     db.query(models.Analysis).delete()
+    g = db.query(models.Group).first()
+    if g:
+        db.query(models.ModeratorAlert).filter(models.ModeratorAlert.group_id == g.id).delete()
+        db.query(models.GroupState).filter(models.GroupState.group_id == g.id).delete()
+        db.query(models.MemberState).filter(models.MemberState.group_id == g.id).delete()
     db.commit()
     import threading
     threading.Thread(target=_backfill_analyses_safe, daemon=True).start()
@@ -454,7 +751,6 @@ def admin_reanalyze(_=Depends(_require_admin), db: Session = Depends(get_db)):
 
 @app.get("/backfill/status")
 def backfill_status(db: Session = Depends(get_db)):
-    """Tell the UI how many messages still need analysis."""
     total = db.query(models.Message).count()
     analyzed = db.query(models.Analysis.message_id).distinct().count()
     return {"total": total, "analyzed": analyzed, "pending": max(0, total - analyzed)}

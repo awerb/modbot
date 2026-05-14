@@ -73,6 +73,48 @@ class Analysis(Base):
     topic_tags = Column(ARRAY(String), default=list)
     model = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Phase 2 additions
+    heat_score = Column(Float, nullable=True)            # 0..1
+    is_disagreement = Column(Boolean, default=False)
+    steelman_present = Column(Boolean, default=False)
+    is_question = Column(Boolean, default=False)
+    is_assertion = Column(Boolean, default=False)
+    is_repair = Column(Boolean, default=False)
+    repair_notes = Column(Text, nullable=True)
+    references_member_id = Column(String, nullable=True)
+
+
+class GroupState(Base):
+    __tablename__ = "group_state"
+    id = Column(String, primary_key=True, default=_uuid)
+    group_id = Column(String, ForeignKey("groups.id"), nullable=False, unique=True)
+    rolling_heat = Column(Float, default=0.0)
+    last_pause_prompt_at = Column(DateTime, nullable=True)
+    question_assertion_ratio_7d = Column(Float, default=0.0)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class MemberState(Base):
+    __tablename__ = "member_state"
+    id = Column(String, primary_key=True, default=_uuid)
+    group_id = Column(String, ForeignKey("groups.id"), nullable=False)
+    member_id = Column(String, ForeignKey("members.id"), nullable=False, unique=True)
+    last_substantive_post_at = Column(DateTime, nullable=True)
+    last_contested_exchange_at = Column(DateTime, nullable=True)
+    silent_since = Column(DateTime, nullable=True)
+    repair_count = Column(Integer, default=0)
+    steelman_count = Column(Integer, default=0)
+
+
+class ModeratorAlert(Base):
+    __tablename__ = "moderator_alerts"
+    id = Column(String, primary_key=True, default=_uuid)
+    group_id = Column(String, ForeignKey("groups.id"), nullable=False)
+    # kinds: pause_suggested | steelman_missing | repair_detected | exit_velocity | quiet_member_substantive
+    kind = Column(String, nullable=False)
+    payload = Column(JSONB, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    resolved_at = Column(DateTime, nullable=True)
 
 
 class DailyArtifact(Base):
