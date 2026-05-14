@@ -87,3 +87,27 @@ def test_daily_question_quiet_member_reference():
     q = ai.daily_question("transcript", quiet)
     # In stub mode, references quiet member by name
     assert "Mei Lin" in q
+
+
+def test_stub_deep_detects_member_full_name():
+    out = ai._stub_deep("Priya Anand, with respect, the data doesn't support that.", members=["Amara Okonkwo", "Priya Anand", "Mei Lin"])
+    assert out["references_member"] == "Priya Anand"
+
+
+def test_stub_deep_detects_member_first_name():
+    out = ai._stub_deep("Michael, that's a swipe, not an argument.", members=["Amara Okonkwo", "Michael Standup"])
+    assert out["references_member"] == "Michael Standup"
+
+
+def test_stub_deep_no_member_when_absent():
+    out = ai._stub_deep("Sourced summary of the data posted below.", members=["Mei Lin"])
+    assert out["references_member"] is None
+
+
+def test_normalize_tags_dedupes_and_lowercases():
+    from app.main import _normalize_tags
+    out = _normalize_tags(["Gaza", "gaza", "Foreign Policy", "foreign-policy", "Foreign_Policy"])
+    assert "gaza" in out
+    assert "foreign_policy" in out
+    # All variants of "foreign policy" collapse to one
+    assert out.count("foreign_policy") == 1

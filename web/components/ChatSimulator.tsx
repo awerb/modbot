@@ -65,6 +65,10 @@ export default function ChatSimulator({
   const [groupName, setGroupName] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
   const [optimistic, setOptimistic] = useState<Msg[]>([]);
+  // Map of tempId -> server message_id, once the POST has returned. We use this
+  // to drop optimistic entries only when their specific server twin is visible,
+  // not just any message with the same text.
+  const optimisticServerIds = useRef<Map<string, string>>(new Map());
   const [active, setActive] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [forwarded, setForwarded] = useState(false);
@@ -93,13 +97,16 @@ export default function ChatSimulator({
       const r = await jget(`/chat/messages`);
       const serverMsgs: Msg[] = r.messages;
       setMessages(serverMsgs);
-      // Drop optimistic messages whose server twin has arrived
+      // Drop optimistic entries whose specific server_id is now visible.
       setOptimistic((opt) => {
         if (opt.length === 0) return opt;
-        const serverByKey = new Set(
-          serverMsgs.map((m) => `${m.member.id}|${m.text}`)
-        );
-        return opt.filter((o) => !serverByKey.has(`${o.member.id}|${o.text}`));
+        const serverIds = new Set(serverMsgs.map((m) => m.id));
+        return opt.filter((o) => {
+          const sid = optimisticServerIds.current.get(o.id);
+          // Keep if we don't know its server id yet (POST hasn't returned),
+          // or if its server twin hasn't shown up in /chat/messages yet.
+          return !sid || !serverIds.has(sid);
+        });
       });
       // Clear pending IDs for messages that now have an analysis
       setPendingIds((prev) => {
@@ -201,6 +208,7 @@ export default function ChatSimulator({
         { timeoutMs: 45000 }
       );
       if (r?.message_id) {
+        optimisticServerIds.current.set(tempId, r.message_id);
         // Transfer "pending" from the optimistic temp ID to the real server ID
         setPendingIds((p) => {
           const n = new Set(p);

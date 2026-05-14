@@ -78,13 +78,24 @@ def _stub_target(text: str) -> dict:
     }
 
 
-def _stub_deep(text: str) -> dict:
+def _stub_deep(text: str, members: Optional[List[str]] = None) -> dict:
     lower = text.lower()
     heat_words = ["genocide", "lie", "propaganda", "denial", "blinded", "useful idiot", "should be ashamed", "morally bankrupt"]
     heat = min(1.0, sum(0.2 for w in heat_words if w in lower))
     is_q = text.strip().endswith("?")
     is_disagree = any(p in lower for p in ["that is not", "that's not", "you're wrong", "i disagree", "no.", "stop"])
     is_repair = any(p in lower for p in ["i'm sorry", "fair point", "i'll pull that back", "you're right", "i didn't know", "thank you for"])
+    ref = None
+    if members:
+        # Match first member name or first-name found in the message
+        for name in members:
+            if name and name.lower() in lower:
+                ref = name
+                break
+            first = (name or "").split(" ")[0]
+            if first and len(first) >= 3 and first.lower() in lower:
+                ref = name
+                break
     return {
         "heat_score": round(heat, 2),
         "is_disagreement": is_disagree,
@@ -93,7 +104,7 @@ def _stub_deep(text: str) -> dict:
         "is_assertion": not is_q,
         "is_repair": is_repair,
         "repair_notes": "Heuristic." if is_repair else "",
-        "references_member": None,
+        "references_member": ref,
     }
 
 
@@ -158,10 +169,10 @@ Respond with ONLY a JSON object:
         return {**_stub_target(text), "notes": f"AI error: {e}"}
 
 
-def deep_analysis(text: str, context: str = "") -> dict:
+def deep_analysis(text: str, context: str = "", member_names: Optional[List[str]] = None) -> dict:
     """Phase 2: classify heat, disagreement, steelman, question/assertion, repair. One Sonnet call."""
     if not _client:
-        return _stub_deep(text)
+        return _stub_deep(text, member_names)
     ctx_block = f"Recent context (previous 6 messages, for grounding):\n{context}\n\n" if context else ""
     prompt = f"""You are analyzing one message from a heated but moderated discussion group on geopolitics. Classify it precisely.
 
@@ -188,13 +199,13 @@ Respond with ONLY a JSON object:
         )
         out = _extract_json(resp.content[0].text)
         if not out:
-            return _stub_deep(text)
+            return _stub_deep(text, member_names)
         # normalize
         out["heat_score"] = max(0.0, min(1.0, float(out.get("heat_score") or 0)))
         return out
     except Exception as e:
         log.exception("deep_analysis AI error: %s", e)
-        return _stub_deep(text)
+        return _stub_deep(text, member_names)
 
 
 def daily_question(transcript: str, quiet_members: List[dict]) -> str:

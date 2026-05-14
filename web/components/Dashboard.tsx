@@ -128,6 +128,13 @@ export default function Dashboard({
     } catch {}
   }
 
+  async function forwardAction(messageId: string, action: "release" | "discard") {
+    try {
+      await jpost(`/forwards/${messageId}/${action}`, {});
+      await load();
+    } catch {}
+  }
+
   if (!data) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-gray-500 text-sm gap-2 p-4 text-center">
@@ -302,10 +309,16 @@ export default function Dashboard({
                 </div>
                 <div className="text-sm text-gray-800 line-clamp-3">{m.text}</div>
                 <div className="mt-1 flex gap-2">
-                  <button className="text-[11px] rounded border border-gray-300 px-2 py-0.5 text-gray-600">
+                  <button
+                    onClick={() => forwardAction(m.id, "release")}
+                    className="text-[11px] rounded border border-emerald-300 bg-white hover:bg-emerald-50 px-2 py-0.5 text-emerald-800"
+                  >
                     Release
                   </button>
-                  <button className="text-[11px] rounded border border-gray-300 px-2 py-0.5 text-gray-600">
+                  <button
+                    onClick={() => forwardAction(m.id, "discard")}
+                    className="text-[11px] rounded border border-gray-300 bg-white hover:bg-gray-50 px-2 py-0.5 text-gray-700"
+                  >
                     Discard
                   </button>
                 </div>

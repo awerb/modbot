@@ -3,7 +3,7 @@ import { useState } from "react";
 import ChatSimulator from "@/components/ChatSimulator";
 import Dashboard from "@/components/Dashboard";
 import AboutTab from "@/components/AboutTab";
-import { jpost } from "@/lib/api";
+import { jpost, getAdminToken, setAdminToken } from "@/lib/api";
 
 const ARCHETYPES: { initial: string; color: string; name: string; tag: string; line: string }[] = [
   { initial: "A", color: "#0ea5e9", name: "Amara Okonkwo", tag: "Bridge-Builder", line: "Asks questions, summarizes, steelmans before disagreeing." },
@@ -83,7 +83,20 @@ export default function Page() {
     if (!confirm("Wipe and reseed the demo data?")) return;
     setResetting(true);
     try {
-      await jpost(`/admin/reseed`, {});
+      try {
+        await jpost(`/admin/reseed`, {});
+      } catch (e: any) {
+        if (/401/.test(String(e?.message || ""))) {
+          const t = prompt("Admin token required (ADMIN_TOKEN env var on the api). Enter it:", getAdminToken() || "");
+          if (!t) {
+            return;
+          }
+          setAdminToken(t);
+          await jpost(`/admin/reseed`, {});
+        } else {
+          throw e;
+        }
+      }
       bumpDashboard();
     } catch (e) {
       alert("Reset failed. Is the API up?");

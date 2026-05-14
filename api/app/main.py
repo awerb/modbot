@@ -234,12 +234,26 @@ def simulate_message(body: schemas.SimulateMessageIn, db: Session = Depends(get_
     db.add(msg)
     db.commit()
     db.refresh(msg)
-    analysis = _run_analysis(db, msg)
-    try:
-        _recompute_state_and_alerts(db)
-    except Exception as e:
-        log.exception("state recompute failed after simulate: %s", e)
-    return {"message_id": msg.id, "analysis_id": analysis.id if analysis else None}
+    msg_id = msg.id
+
+    # Run analysis + recompute on a background thread so the POST returns fast.
+    # Frontend polling will pick up the analysis when it lands.
+    def _bg():
+        bg = SessionLocal()
+        try:
+            m = bg.query(models.Message).filter(models.Message.id == msg_id).first()
+            if not m:
+                return
+            _run_analysis(bg, m)
+            _recompute_state_and_alerts(bg)
+        except Exception as e:
+            log.exception("background analysis failed: %s", e)
+        finally:
+            bg.close()
+    import threading
+    threading.Thread(target=_bg, daemon=True).start()
+
+    return {"message_id": msg_id, "analysis_id": None}
 
 
 # ---------- Analyze ----------
@@ -257,6 +271,25 @@ def _transcript_tail(db: Session, group_id: str, before: datetime, n: int = 6) -
     return "\n".join(f"{mem.display_name}: {m.text}" for (m, mem) in rows)
 
 
+import re as _re_topics
+
+
+def _normalize_tags(tags) -> List[str]:
+    """Lowercase, replace separators with _, dedupe. Keeps topic clouds clean."""
+    out: List[str] = []
+    seen = set()
+    for t in tags or []:
+        if not t:
+            continue
+        s = _re_topics.sub(r"[\s/\\-]+", "_", str(t).strip().lower())
+        s = _re_topics.sub(r"[^a-z0-9_]", "", s)
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        out.append(s)
+    return out
+
+
 def _run_analysis(db: Session, msg: models.Message) -> "models.Analysis | None":
     existing = db.query(models.Analysis).filter(models.Analysis.message_id == msg.id).first()
     if existing:
@@ -264,7 +297,10 @@ def _run_analysis(db: Session, msg: models.Message) -> "models.Analysis | None":
     fact = ai.factuality_check(msg.text, msg.is_forwarded)
     tgt = ai.target_check(msg.text)
     ctx = _transcript_tail(db, msg.group_id, msg.received_at, n=6)
-    deep = ai.deep_analysis(msg.text, ctx)
+    member_names = [
+        n for (n,) in db.query(models.Member.display_name).filter(models.Member.group_id == msg.group_id).all()
+    ]
+    deep = ai.deep_analysis(msg.text, ctx, member_names=member_names)
 
     # Resolve references_member name -> id
     ref_member_id = None
@@ -286,7 +322,7 @@ def _run_analysis(db: Session, msg: models.Message) -> "models.Analysis | None":
         target_flag=bool(tgt.get("target_flag")),
         target_category=tgt.get("category"),
         target_notes=tgt.get("notes"),
-        topic_tags=tgt.get("topic_tags") or [],
+        topic_tags=_normalize_tags(tgt.get("topic_tags")),
         model="haiku+sonnet" if os.getenv("ANTHROPIC_API_KEY") else "stub",
         heat_score=deep.get("heat_score"),
         is_disagreement=bool(deep.get("is_disagreement")),
@@ -358,6 +394,17 @@ def _emit_alert(db: Session, group_id: str, kind: str, payload: dict, dedupe_win
 
 
 def _recompute_state_and_alerts(db: Session):
+    try:
+        _recompute_state_and_alerts_inner(db)
+    except Exception as e:
+        log.exception("recompute failed, rolling back: %s", e)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
+def _recompute_state_and_alerts_inner(db: Session):
     g = db.query(models.Group).first()
     if not g:
         return
@@ -405,7 +452,9 @@ def _recompute_state_and_alerts(db: Session):
     gs.updated_at = datetime.utcnow()
     db.commit()
 
-    # Member state recompute
+    # Member state recompute. Keep an in-memory map so the exit-velocity loop
+    # below doesn't have to re-query.
+    ms_by_member: Dict[str, "models.MemberState"] = {}
     for mem in members:
         ms = db.query(models.MemberState).filter(models.MemberState.member_id == mem.id).first()
         if not ms:
@@ -423,12 +472,15 @@ def _recompute_state_and_alerts(db: Session):
         ms.silent_since = mem_msgs[-1].received_at if mem_msgs else None
         ms.repair_count = sum(1 for m in mem_msgs if a_by_msg.get(m.id) and a_by_msg.get(m.id).is_repair)
         ms.steelman_count = sum(1 for m in mem_msgs if a_by_msg.get(m.id) and a_by_msg.get(m.id).is_disagreement and a_by_msg.get(m.id).steelman_present)
+        ms_by_member[mem.id] = ms
     db.commit()
 
     # Alerts
     if hot_streak and not _has_recent_unresolved_alert(db, g.id, "pause_suggested", 30):
         prompt_msg = ai.pause_prompt(_transcript_tail(db, g.id, datetime.utcnow(), n=6))
         _emit_alert(db, g.id, "pause_suggested", {"rolling_heat": rolling, "draft": prompt_msg}, dedupe_window_min=30)
+        gs.last_pause_prompt_at = datetime.utcnow()
+        db.commit()
 
     # Steelman missing: most recent disagreement in last 3 without steelman
     for m in reversed(last_3):
@@ -456,7 +508,7 @@ def _recompute_state_and_alerts(db: Session):
     # Exit velocity: member with contested exchange in last 7d but silent >= 48h
     now = datetime.utcnow()
     for mem in members:
-        ms = db.query(models.MemberState).filter(models.MemberState.member_id == mem.id).first()
+        ms = ms_by_member.get(mem.id)
         if not ms or not ms.last_contested_exchange_at or not ms.silent_since:
             continue
         contested = ms.last_contested_exchange_at
@@ -579,6 +631,22 @@ def resolve_alert(alert_id: str, db: Session = Depends(get_db)):
     a.resolved_at = datetime.utcnow()
     db.commit()
     return {"ok": True}
+
+
+# ---------- Forward friction actions (R5) ----------
+
+@app.post("/forwards/{message_id}/{action}")
+def forward_action(message_id: str, action: str, db: Session = Depends(get_db)):
+    if action not in ("release", "discard"):
+        raise HTTPException(400, "action must be 'release' or 'discard'")
+    m = db.query(models.Message).filter(models.Message.id == message_id).first()
+    if not m:
+        raise HTTPException(404, "message not found")
+    if not m.is_forwarded:
+        raise HTTPException(400, "not a forwarded message")
+    m.forward_friction_status = "released" if action == "release" else "discarded"
+    db.commit()
+    return {"ok": True, "status": m.forward_friction_status}
 
 
 # ---------- Dashboard ----------
