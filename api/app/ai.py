@@ -5,15 +5,24 @@ import json
 import re
 from typing import Optional, List, Dict
 
+import logging
+log = logging.getLogger("ygl-mod.ai")
+logging.basicConfig(level=logging.INFO)
+
+_init_error: Optional[str] = None
 try:
     from anthropic import Anthropic
-    _client = (
-        Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"), timeout=20.0, max_retries=1)
-        if os.getenv("ANTHROPIC_API_KEY")
-        else None
-    )
-except Exception:
+    _key = os.getenv("ANTHROPIC_API_KEY")
+    if _key:
+        _client = Anthropic(api_key=_key, timeout=20.0, max_retries=1)
+        log.info("Anthropic client initialized")
+    else:
+        _client = None
+        log.warning("ANTHROPIC_API_KEY not set; using heuristic fallback")
+except Exception as e:
     _client = None
+    _init_error = repr(e)
+    log.exception("Failed to initialize Anthropic client: %s", e)
 
 MODEL_FAST = "claude-haiku-4-5-20251001"
 MODEL_SMART = "claude-sonnet-4-5"
@@ -87,6 +96,7 @@ Respond with ONLY a JSON object:
         out = _extract_json(resp.content[0].text)
         return out or _stub_factuality(text, is_forwarded)
     except Exception as e:
+        log.exception("factuality_check AI error: %s", e)
         return {**_stub_factuality(text, is_forwarded), "notes": f"AI error: {e}"}
 
 
@@ -113,6 +123,7 @@ Respond with ONLY a JSON object:
         out = _extract_json(resp.content[0].text)
         return out or _stub_target(text)
     except Exception as e:
+        log.exception("target_check AI error: %s", e)
         return {**_stub_target(text), "notes": f"AI error: {e}"}
 
 

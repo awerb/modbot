@@ -61,6 +61,21 @@ def healthz():
     return {"ok": True}
 
 
+@app.get("/debug/ai")
+def debug_ai():
+    """Quick liveness check for the Anthropic client. Demo-only diagnostic."""
+    has_key = bool(os.getenv("ANTHROPIC_API_KEY"))
+    client_ok = ai._client is not None
+    sample = ai.target_check("Test message about immigration policy.")
+    return {
+        "has_anthropic_key": has_key,
+        "client_initialized": client_ok,
+        "sample_target_check": sample,
+        "model_fast": ai.MODEL_FAST,
+        "model_smart": ai.MODEL_SMART,
+    }
+
+
 def _current_group(db: Session, group_id: Optional[str] = None) -> models.Group:
     q = db.query(models.Group)
     if group_id:
