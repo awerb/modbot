@@ -178,7 +178,10 @@ def simulate_message(body: schemas.SimulateMessageIn, db: Session = Depends(get_
 
 # ---------- Analyze ----------
 
-def _run_analysis(db: Session, msg: models.Message) -> models.Analysis | None:
+def _run_analysis(db: Session, msg: models.Message) -> "models.Analysis | None":
+    existing = db.query(models.Analysis).filter(models.Analysis.message_id == msg.id).first()
+    if existing:
+        return existing
     fact = ai.factuality_check(msg.text, msg.is_forwarded)
     tgt = ai.target_check(msg.text)
     a = models.Analysis(
