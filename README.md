@@ -1,6 +1,6 @@
 # YGL Mod
 
-A WhatsApp group moderation tool for a small Young Global Leaders discussion group on difficult conversations.
+A WhatsApp group moderation simulation for a small Young Global Leaders discussion group on difficult conversations.
 
 The product question: can AI help a human moderator notice the things that actually matter (heat building, claims without sources, a quiet member who finally posted something substantive, someone who went silent after a contested exchange) without taking the human out of the loop?
 
@@ -116,7 +116,7 @@ For each new message:
 
 1. **factuality_check** (Haiku) — does the message make claims? Are any sources present?
 2. **target_check** (Sonnet) — does the speaker demean a group? Topic discussion and quoting-to-push-back are explicitly not flagged via worked examples in the prompt.
-3. **deep_analysis** (Sonnet) — heat score (0–1), is_disagreement, steelman_present, is_question, is_assertion, is_repair, repair_notes, references_member.
+3. **deep_analysis** (Sonnet) — heat score (0–1), is_disagreement, steelman_present, is_question, is_assertion, is_repair, repair_notes, is_personal_event, personal_event_notes, references_member.
 
 After each analysis, `_recompute_state_and_alerts` updates `group_state` (rolling heat over last 5, Q/A 7-day ratio) and `member_state` (last_substantive_post_at, last_contested_exchange_at, silent_since, repair_count, steelman_count), and emits alerts when the relevant rule fires.
 
@@ -133,6 +133,7 @@ After each analysis, `_recompute_state_and_alerts` updates `group_state` (rollin
 | R8 | Quiet-member reward | Quiet members (<10% share) who post substantively trigger an alert and get referenced by name in tomorrow's question |
 | R9 | Repair detection | Apologies, walk-backs, acknowledgements; green star and `repair_detected` alert |
 | R10 | Exit velocity | Contested exchange + 48h silence → `exit_velocity` alert (moderator-only) |
+| R11 | No personal events/issues | Off-topic personal life posts (family news, health updates, birthdays, job changes, venting) are flagged and surfaced in a `personal_events` panel. Lived experience tied to the topic is explicitly not flagged. |
 
 All alerts are dedupe-windowed: pause 30min, repair 120min, exit-velocity 240min, quiet-member 720min, steelman 10min.
 
