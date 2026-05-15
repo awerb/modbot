@@ -1,6 +1,6 @@
 # YGL Mod
 
-A WhatsApp group moderation tool for a small Young Global Leaders discussion group on difficult conversations.
+A WhatsApp group moderation simulation for a small Young Global Leaders discussion group on difficult conversations.
 
 The product question: can AI help a human moderator notice the things that actually matter (heat building, claims without sources, a quiet member who finally posted something substantive, someone who went silent after a contested exchange) without taking the human out of the loop?
 
