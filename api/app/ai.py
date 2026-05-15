@@ -28,6 +28,60 @@ MODEL_FAST = "claude-haiku-4-5-20251001"
 MODEL_SMART = "claude-sonnet-4-5"
 
 
+# USD per 1M tokens. Public Anthropic pricing as of demo build; adjust if pricing
+# changes. Cache rates: write = 1.25x input, read = 0.10x input (approximate).
+PRICING = {
+    "claude-haiku-4-5-20251001": {"input": 1.0, "output": 5.0, "cache_write": 1.25, "cache_read": 0.10},
+    "claude-sonnet-4-5":         {"input": 3.0, "output": 15.0, "cache_write": 3.75, "cache_read": 0.30},
+}
+
+
+def cost_for(model: str, input_tokens: int, output_tokens: int, cache_write: int = 0, cache_read: int = 0) -> float:
+    p = PRICING.get(model)
+    if not p:
+        return 0.0
+    return (
+        input_tokens / 1_000_000 * p["input"]
+        + output_tokens / 1_000_000 * p["output"]
+        + cache_write / 1_000_000 * p["cache_write"]
+        + cache_read / 1_000_000 * p["cache_read"]
+    )
+
+
+# Thread-local queue of usage records. The api drains this after each call batch
+# and writes to the anthropic_usage table.
+import threading as _threading
+_usage_local = _threading.local()
+
+
+def _push_usage(resp, call_type: str, model: str) -> None:
+    if not hasattr(_usage_local, "records"):
+        _usage_local.records = []
+    usage = getattr(resp, "usage", None)
+    if not usage:
+        return
+    input_t = int(getattr(usage, "input_tokens", 0) or 0)
+    output_t = int(getattr(usage, "output_tokens", 0) or 0)
+    cache_w = int(getattr(usage, "cache_creation_input_tokens", 0) or 0)
+    cache_r = int(getattr(usage, "cache_read_input_tokens", 0) or 0)
+    _usage_local.records.append({
+        "call_type": call_type,
+        "model": model,
+        "input_tokens": input_t,
+        "output_tokens": output_t,
+        "cache_creation_input_tokens": cache_w,
+        "cache_read_input_tokens": cache_r,
+        "cost_usd": cost_for(model, input_t, output_t, cache_w, cache_r),
+    })
+
+
+def drain_usage() -> list:
+    """Return and clear the current thread's pending usage records."""
+    records = getattr(_usage_local, "records", None) or []
+    _usage_local.records = []
+    return records
+
+
 def _extract_json(text: str) -> Optional[dict]:
     if not text:
         return None
@@ -126,6 +180,7 @@ Respond with ONLY a JSON object:
             max_tokens=400,
             messages=[{"role": "user", "content": prompt}],
         )
+        _push_usage(resp, "factuality", MODEL_FAST)
         out = _extract_json(resp.content[0].text)
         return out or _stub_factuality(text, is_forwarded)
     except Exception as e:
@@ -162,6 +217,7 @@ Respond with ONLY a JSON object:
             max_tokens=500,
             messages=[{"role": "user", "content": prompt}],
         )
+        _push_usage(resp, "target", MODEL_SMART)
         out = _extract_json(resp.content[0].text)
         return out or _stub_target(text)
     except Exception as e:
@@ -197,6 +253,7 @@ Respond with ONLY a JSON object:
             max_tokens=400,
             messages=[{"role": "user", "content": prompt}],
         )
+        _push_usage(resp, "deep", MODEL_SMART)
         out = _extract_json(resp.content[0].text)
         if not out:
             return _stub_deep(text, member_names)
@@ -229,6 +286,7 @@ Write ONE question (2 sentences max) to seed tomorrow's discussion. If a quiet m
             max_tokens=300,
             messages=[{"role": "user", "content": prompt}],
         )
+        _push_usage(resp, "daily_question", MODEL_SMART)
         return resp.content[0].text.strip()
     except Exception:
         return "Yesterday's thread surfaced a tension between strategy framing and lived stakes. Whose framing do you find hardest to argue with, and why?"
@@ -247,6 +305,7 @@ Transcript:
             max_tokens=400,
             messages=[{"role": "user", "content": prompt}],
         )
+        _push_usage(resp, "daily_summary", MODEL_FAST)
         return resp.content[0].text.strip()
     except Exception:
         return "- (summary unavailable)"
@@ -274,6 +333,7 @@ Output just the message text, nothing else."""
             max_tokens=200,
             messages=[{"role": "user", "content": prompt}],
         )
+        _push_usage(resp, "pause_prompt", MODEL_SMART)
         return resp.content[0].text.strip()
     except Exception:
         return "Pausing for a moment. This matters to all of us. Can we slow down and name what we're carrying in before we name what we disagree on?"

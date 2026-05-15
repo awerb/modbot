@@ -111,3 +111,25 @@ def test_normalize_tags_dedupes_and_lowercases():
     assert "foreign_policy" in out
     # All variants of "foreign policy" collapse to one
     assert out.count("foreign_policy") == 1
+
+
+def test_cost_for_haiku():
+    # 1M input + 1M output at haiku rates = 1.00 + 5.00 = $6.00
+    c = ai.cost_for("claude-haiku-4-5-20251001", 1_000_000, 1_000_000)
+    assert abs(c - 6.0) < 1e-6
+
+
+def test_cost_for_sonnet_with_cache():
+    # 100k input, 50k output, 100k cache read = 0.30 + 0.75 + 0.03 = 1.08
+    c = ai.cost_for("claude-sonnet-4-5", 100_000, 50_000, cache_read=100_000)
+    assert abs(c - 1.08) < 1e-6
+
+
+def test_cost_for_unknown_model():
+    assert ai.cost_for("claude-mystery-99", 1_000_000, 1_000_000) == 0.0
+
+
+def test_drain_usage_starts_empty():
+    # Drain may carry over from earlier test calls; once drained, it's empty.
+    ai.drain_usage()
+    assert ai.drain_usage() == []

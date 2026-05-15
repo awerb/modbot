@@ -336,7 +336,31 @@ def _run_analysis(db: Session, msg: models.Message) -> "models.Analysis | None":
     db.add(a)
     db.commit()
     db.refresh(a)
+    _persist_usage(db, message_id=msg.id)
     return a
+
+
+def _persist_usage(db: Session, message_id: Optional[str] = None) -> None:
+    """Drain ai's thread-local usage queue and write rows to anthropic_usage."""
+    records = ai.drain_usage()
+    if not records:
+        return
+    try:
+        for r in records:
+            db.add(models.AnthropicUsage(
+                call_type=r["call_type"],
+                model=r["model"],
+                input_tokens=r["input_tokens"],
+                output_tokens=r["output_tokens"],
+                cache_creation_input_tokens=r["cache_creation_input_tokens"],
+                cache_read_input_tokens=r["cache_read_input_tokens"],
+                cost_usd=r["cost_usd"],
+                message_id=message_id,
+            ))
+        db.commit()
+    except Exception as e:
+        log.exception("persist usage failed: %s", e)
+        db.rollback()
 
 
 @app.post("/analyze/{message_id}")
@@ -478,6 +502,7 @@ def _recompute_state_and_alerts_inner(db: Session):
     # Alerts
     if hot_streak and not _has_recent_unresolved_alert(db, g.id, "pause_suggested", 30):
         prompt_msg = ai.pause_prompt(_transcript_tail(db, g.id, datetime.utcnow(), n=6))
+        _persist_usage(db)
         _emit_alert(db, g.id, "pause_suggested", {"rolling_heat": rolling, "draft": prompt_msg}, dedupe_window_min=30)
         gs.last_pause_prompt_at = datetime.utcnow()
         db.commit()
@@ -577,6 +602,7 @@ def daily_generate(group_id: Optional[str] = None, target_date: Optional[str] = 
 
     summary = ai.daily_summary(transcript) if transcript else "- no messages"
     question = ai.daily_question(transcript, quiet_payload) if transcript else "What would you like to dig into today?"
+    _persist_usage(db)
 
     art = (
         db.query(models.DailyArtifact)
@@ -832,3 +858,52 @@ def backfill_status(db: Session = Depends(get_db)):
     total = db.query(models.Message).count()
     analyzed = db.query(models.Analysis.message_id).distinct().count()
     return {"total": total, "analyzed": analyzed, "pending": max(0, total - analyzed)}
+
+
+# ---------- Anthropic usage accounting ----------
+
+@app.get("/usage/summary")
+def usage_summary(db: Session = Depends(get_db)):
+    """Total + per-model breakdown of Anthropic API spend on this instance."""
+    rows = db.query(models.AnthropicUsage).all()
+    by_model: Dict[str, dict] = {}
+    by_call: Dict[str, dict] = {}
+    total_cost = 0.0
+    total_input = 0
+    total_output = 0
+    for r in rows:
+        m = by_model.setdefault(r.model, {
+            "calls": 0, "input_tokens": 0, "output_tokens": 0,
+            "cache_read_tokens": 0, "cache_write_tokens": 0, "cost_usd": 0.0,
+        })
+        m["calls"] += 1
+        m["input_tokens"] += r.input_tokens or 0
+        m["output_tokens"] += r.output_tokens or 0
+        m["cache_read_tokens"] += r.cache_read_input_tokens or 0
+        m["cache_write_tokens"] += r.cache_creation_input_tokens or 0
+        m["cost_usd"] = round(m["cost_usd"] + (r.cost_usd or 0), 6)
+
+        c = by_call.setdefault(r.call_type, {"calls": 0, "cost_usd": 0.0})
+        c["calls"] += 1
+        c["cost_usd"] = round(c["cost_usd"] + (r.cost_usd or 0), 6)
+
+        total_cost += r.cost_usd or 0
+        total_input += r.input_tokens or 0
+        total_output += r.output_tokens or 0
+
+    return {
+        "total_cost_usd": round(total_cost, 6),
+        "total_calls": len(rows),
+        "total_input_tokens": total_input,
+        "total_output_tokens": total_output,
+        "by_model": by_model,
+        "by_call_type": by_call,
+        "pricing": ai.PRICING,
+    }
+
+
+@app.post("/admin/usage/reset")
+def admin_usage_reset(_=Depends(_require_admin), db: Session = Depends(get_db)):
+    db.query(models.AnthropicUsage).delete()
+    db.commit()
+    return {"ok": True}

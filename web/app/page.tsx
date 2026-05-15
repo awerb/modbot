@@ -3,6 +3,7 @@ import { useState } from "react";
 import ChatSimulator from "@/components/ChatSimulator";
 import Dashboard from "@/components/Dashboard";
 import AboutTab from "@/components/AboutTab";
+import UsagePill from "@/components/UsagePill";
 import { jpost, getAdminToken, setAdminToken } from "@/lib/api";
 
 const ARCHETYPES: { initial: string; color: string; name: string; tag: string; line: string }[] = [
@@ -150,6 +151,7 @@ export default function Page() {
           >
             About
           </button>
+          <UsagePill />
           <span
             className={`text-[11px] flex items-center gap-1 px-2 py-0.5 rounded-full border ${
               connected === false

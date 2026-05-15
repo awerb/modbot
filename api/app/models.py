@@ -117,6 +117,20 @@ class ModeratorAlert(Base):
     resolved_at = Column(DateTime, nullable=True)
 
 
+class AnthropicUsage(Base):
+    __tablename__ = "anthropic_usage"
+    id = Column(String, primary_key=True, default=_uuid)
+    call_type = Column(String, nullable=False, index=True)  # factuality | target | deep | pause_prompt | daily_question | daily_summary
+    model = Column(String, nullable=False, index=True)
+    input_tokens = Column(Integer, default=0)
+    output_tokens = Column(Integer, default=0)
+    cache_creation_input_tokens = Column(Integer, default=0)
+    cache_read_input_tokens = Column(Integer, default=0)
+    cost_usd = Column(Float, default=0.0)
+    message_id = Column(String, nullable=True)  # for traceability when tied to a chat message
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
 class DailyArtifact(Base):
     __tablename__ = "daily_artifacts"
     id = Column(String, primary_key=True, default=_uuid)
