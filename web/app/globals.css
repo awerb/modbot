@@ -16,3 +16,8 @@ body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
 }
 
 .bubble-shadow { box-shadow: 0 1px 0.5px rgba(0,0,0,0.13); }
+
+/* Respect iOS home-indicator on the bottom tab bar */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}

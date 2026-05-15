@@ -31,50 +31,40 @@ const RULES: Rule[] = [
 type RoadmapItem = { status: "done" | "next" | "later"; title: string; line: string };
 
 const ROADMAP: RoadmapItem[] = [
-  // Phase 1
   { status: "done", title: "Chat simulator + dashboard", line: "WhatsApp-style chat with 5 archetype characters, optimistic send, click-to-expand AI reasoning. Forest-green moderator dashboard with floor balance, held forwards, targeted flags, topics, daily summary." },
   { status: "done", title: "AI analysis pipeline", line: "Factuality / source check (Haiku), targeting check (Sonnet with worked examples for quoting vs. using language), deep classification (Sonnet)." },
   { status: "done", title: "Rules R1, R5, R6", line: "Floor balance, forward friction, target-vs-topic separation." },
   { status: "done", title: "Daily summary + suggested question", line: "Sonnet generates a neutral 4–6 bullet summary and a single seed question that references quiet members by name." },
-  // Phase 2
   { status: "done", title: "Heat, steelman, repair, exit velocity", line: "Rules R2, R3, R9, R10 with moderator alerts. Pause-suggested banner with Sonnet-drafted pause message ready to paste." },
   { status: "done", title: "Q/A ratio + quiet-member reward", line: "Rules R7, R8. Rolling 7d ratio in the dashboard top strip, quiet-member alert and tomorrow's-question integration." },
   { status: "done", title: "Hardening", line: "Admin endpoints token-gated, 7d cap on flagged lists, graceful API fallback when no Anthropic key, optimistic send, AI timeouts." },
-  { status: "done", title: "Tests + docs", line: "Pytest suite (18 unit + 15 integration), TypeScript clean, README + ARCHITECTURE + CHANGELOG." },
-  // Phase 3
+  { status: "done", title: "Tests + docs", line: "Pytest suite (26 unit + 15 integration), TypeScript clean, README + ARCHITECTURE + CHANGELOG." },
+  { status: "done", title: "Token + cost accounting", line: "Every Claude call captured with token counts and USD cost. Topbar pill shows running total." },
+  { status: "done", title: "Mobile-first UI", line: "Bottom tab bar (Chat / Dashboard / About) on phones; secondary actions in a hamburger sheet." },
   { status: "next", title: "Evolution API webhook (real WhatsApp)", line: "Wire /webhook/evolution to a live WhatsApp instance, dedupe by message_id, persist raw_payload." },
   { status: "next", title: "Outbound: moderator-approved sends", line: "Approved pause prompts and steelman invitations get posted back to the group with a moderator byline. Always human-approved, never auto-send." },
   { status: "next", title: "Multi-group support", line: "One moderator, several pilots. Group switcher in the top bar, group_id scoping already in place server-side." },
   { status: "next", title: "Member consent and opt-in flow", line: "Members get a one-time disclosure about what's analyzed and what's stored, plus a way to opt out of specific signals (e.g. heat scoring)." },
-  { status: "next", title: "Background analysis (don't block sends)", line: "Move the 3 AI calls out of the simulate-message request path. Return the message_id immediately, let polling fill in the analysis. Avoids 45s-timeout edge cases." },
-  // Phase 4
   { status: "later", title: "Per-member tone calibration", line: "Heat scored relative to each member's baseline, not absolute. Some members are dispassionate by default, some are intense, both are healthy." },
   { status: "later", title: "Thread coherence", line: "Detect when a debate is talking past itself vs. closing in on a real disagreement. Hard. Probably structured + LLM hybrid." },
   { status: "later", title: "Source attestation library", line: "Track which sources have been credibly used in the group and which have been debunked in-thread. Speeds up factuality_check and gives the moderator continuity." },
   { status: "later", title: "Daily moderator email digest", line: "Everything the dashboard shows, plus suggested 1:1 follow-ups (e.g. who looks like they're about to disengage)." },
 ];
 
-type Tab = "demo" | "about";
+// View states. On desktop, "dashboard" collapses to "chat" because both render
+// side-by-side. On mobile, the three views are mutually exclusive.
+type View = "chat" | "dashboard" | "about";
 
 export default function Page() {
-  const [tab, setTab] = useState<Tab>("demo");
+  const [view, setView] = useState<View>("chat");
   const [refreshKey, setRefreshKey] = useState(0);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [chatOk, setChatOk] = useState<boolean | null>(null);
   const [dashOk, setDashOk] = useState<boolean | null>(null);
   const [resetting, setResetting] = useState(false);
   const [legendOpen, setLegendOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [roadmapOpen, setRoadmapOpen] = useState(false);
-
-  function togglePanel(name: "legend" | "rules" | "roadmap") {
-    // The three reference panels live on the demo tab. If the user is on About,
-    // hop back to demo so the panel is visible.
-    if (tab !== "demo") setTab("demo");
-    setLegendOpen(name === "legend" ? !legendOpen : false);
-    setRulesOpen(name === "rules" ? !rulesOpen : false);
-    setRoadmapOpen(name === "roadmap" ? !roadmapOpen : false);
-  }
 
   const bumpDashboard = () => setRefreshKey((k) => k + 1);
 
@@ -83,8 +73,17 @@ export default function Page() {
       ? null
       : chatOk !== false && dashOk !== false;
 
+  function togglePanel(name: "legend" | "rules" | "roadmap") {
+    if (view === "about") setView("chat");
+    setLegendOpen(name === "legend" ? !legendOpen : false);
+    setRulesOpen(name === "rules" ? !rulesOpen : false);
+    setRoadmapOpen(name === "roadmap" ? !roadmapOpen : false);
+    setMenuOpen(false);
+  }
+
   async function resetDemo() {
     if (!confirm("Wipe and reseed the demo data?")) return;
+    setMenuOpen(false);
     setResetting(true);
     try {
       try {
@@ -109,50 +108,63 @@ export default function Page() {
     }
   }
 
+  // For the split desktop layout, "chat" and "dashboard" both show the split.
+  const showSplit = view === "chat" || view === "dashboard";
+
   return (
-    <div className="h-screen w-screen flex flex-col">
+    <div className="h-screen w-screen flex flex-col bg-white">
       {/* Top bar */}
-      <div className="flex flex-wrap items-center justify-between border-b border-gray-200 bg-white px-3 py-2 gap-y-2 gap-x-2">
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="w-8 h-8 rounded-md bg-forest text-white font-bold flex items-center justify-center">
+      <div className="flex items-center justify-between border-b border-gray-200 bg-white px-3 py-2 gap-2 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-8 h-8 rounded-md bg-forest text-white font-bold flex items-center justify-center shrink-0">
             Y
           </div>
-          <div>
-            <div className="text-sm font-semibold leading-tight">YGL Mod</div>
-            <div className="text-[11px] text-gray-500 leading-tight hidden sm:block">moderation tool</div>
+          <div className="min-w-0">
+            <div className="text-sm font-semibold leading-tight truncate">YGL Mod</div>
+            <div className="text-[11px] text-gray-500 leading-tight truncate hidden sm:block">moderation tool</div>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 flex-wrap justify-end">
-          <button
-            onClick={() => setTab(tab === "about" ? "demo" : "about")}
-            className={`text-xs rounded border px-2 py-1 ${tab === "about" ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
-            title="Technical description of what's built"
-          >
-            About
-          </button>
-          <button
-            onClick={() => togglePanel("legend")}
-            className={`text-xs rounded border px-2 py-1 ${legendOpen ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
-            title="Who are these characters?"
-          >
-            Who's who
-          </button>
-          <button
-            onClick={() => togglePanel("rules")}
-            className={`text-xs rounded border px-2 py-1 ${rulesOpen ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
-            title="What rules drive the moderation signals?"
-          >
-            <span className="sm:hidden">Rules</span>
-            <span className="hidden sm:inline">Moderation rules</span>
-          </button>
-          <button
-            onClick={() => togglePanel("roadmap")}
-            className={`text-xs rounded border px-2 py-1 ${roadmapOpen ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
-            title="What's done and what's planned"
-          >
-            Roadmap
-          </button>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Desktop only: inline secondary buttons */}
+          <div className="hidden lg:flex items-center gap-1.5">
+            <button
+              onClick={() => setView(view === "about" ? "chat" : "about")}
+              className={`text-xs rounded border px-2 py-1 ${view === "about" ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
+            >
+              About
+            </button>
+            <button
+              onClick={() => togglePanel("legend")}
+              className={`text-xs rounded border px-2 py-1 ${legendOpen ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
+              title="Who are these characters?"
+            >
+              Who's who
+            </button>
+            <button
+              onClick={() => togglePanel("rules")}
+              className={`text-xs rounded border px-2 py-1 ${rulesOpen ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
+              title="Rules driving the signals"
+            >
+              Rules
+            </button>
+            <button
+              onClick={() => togglePanel("roadmap")}
+              className={`text-xs rounded border px-2 py-1 ${roadmapOpen ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
+            >
+              Roadmap
+            </button>
+            <button
+              onClick={resetDemo}
+              disabled={resetting}
+              className="text-xs rounded border border-gray-300 px-2 py-1 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {resetting ? "Resetting…" : "Reset"}
+            </button>
+          </div>
+
           <UsagePill />
+
           <span
             className={`text-[11px] flex items-center gap-1 px-2 py-0.5 rounded-full border ${
               connected === false
@@ -165,48 +177,37 @@ export default function Page() {
           >
             <span
               className={`w-1.5 h-1.5 rounded-full ${
-                connected === false
-                  ? "bg-red-500"
-                  : connected
-                    ? "bg-emerald-500"
-                    : "bg-gray-400"
+                connected === false ? "bg-red-500" : connected ? "bg-emerald-500" : "bg-gray-400"
               }`}
             />
             <span className="hidden sm:inline">
               {connected === false ? "offline" : connected ? "online" : "..."}
             </span>
           </span>
-          {tab === "demo" && (
-            <>
-              <button
-                onClick={resetDemo}
-                disabled={resetting}
-                className="text-xs rounded border border-gray-300 px-2 py-1 hover:bg-gray-50 disabled:opacity-50"
-                title="Wipe and reseed the demo data"
-              >
-                {resetting ? "Resetting…" : (
-                  <>
-                    <span className="sm:hidden">Reset</span>
-                    <span className="hidden sm:inline">Reset demo</span>
-                  </>
-                )}
-              </button>
-              <button
-                onClick={() => setDrawerOpen(true)}
-                className="md:hidden text-xs rounded border border-forest bg-forest text-white px-2 py-1"
-              >
-                Dashboard
-              </button>
-            </>
-          )}
+
+          {/* Hamburger: visible up to lg */}
+          <button
+            onClick={() => setMenuOpen(true)}
+            className="lg:hidden text-gray-700 hover:bg-gray-100 rounded p-1.5"
+            aria-label="Open menu"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
         </div>
       </div>
 
-      {/* Archetype legend */}
-      {tab === "demo" && legendOpen && (
-        <div className="border-b border-gray-200 bg-gray-50 px-4 py-3 max-h-[40vh] overflow-y-auto">
-          <div className="text-xs text-gray-600 mb-2">
-            You become one of these characters in the chat. Each one is a real moderation challenge.
+      {/* Reference panels: legend / rules / roadmap (compact on mobile, full grid on desktop) */}
+      {legendOpen && (
+        <div className="border-b border-gray-200 bg-gray-50 px-3 py-3 max-h-[50vh] overflow-y-auto">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs text-gray-600">
+              You become one of these in the chat. Each is a real moderation challenge.
+            </div>
+            <button onClick={() => setLegendOpen(false)} className="text-xs text-gray-400 hover:text-gray-700 lg:hidden">Close</button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
             {ARCHETYPES.map((a) => (
@@ -228,13 +229,15 @@ export default function Page() {
         </div>
       )}
 
-      {/* Moderation rules */}
-      {tab === "demo" && rulesOpen && (
-        <div className="border-b border-gray-200 bg-gray-50 px-4 py-3 max-h-[50vh] overflow-y-auto">
-          <div className="text-xs text-gray-600 mb-2">
-            Nine facilitation rules drive every signal you see. Each runs on a specific shape of AI output and writes to a specific table.
+      {rulesOpen && (
+        <div className="border-b border-gray-200 bg-gray-50 px-3 py-3 max-h-[55vh] overflow-y-auto">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs text-gray-600">
+              Nine facilitation rules drive every signal you see.
+            </div>
+            <button onClick={() => setRulesOpen(false)} className="text-xs text-gray-400 hover:text-gray-700 lg:hidden">Close</button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
             {RULES.map((r) => (
               <div key={r.code} className="rounded-md border border-gray-200 bg-white p-2">
                 <div className="flex items-center gap-2 mb-1">
@@ -251,11 +254,11 @@ export default function Page() {
         </div>
       )}
 
-      {/* Roadmap */}
-      {tab === "demo" && roadmapOpen && (
-        <div className="border-b border-gray-200 bg-gray-50 px-4 py-3 max-h-[55vh] overflow-y-auto">
-          <div className="text-xs text-gray-600 mb-2">
-            Where we are and where we're going.
+      {roadmapOpen && (
+        <div className="border-b border-gray-200 bg-gray-50 px-3 py-3 max-h-[60vh] overflow-y-auto">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs text-gray-600">Where we are and where we're going.</div>
+            <button onClick={() => setRoadmapOpen(false)} className="text-xs text-gray-400 hover:text-gray-700 lg:hidden">Close</button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {(["done", "next", "later"] as const).map((status) => {
@@ -289,38 +292,71 @@ export default function Page() {
       )}
 
       {/* Main */}
-      <div className="flex-1 flex overflow-hidden">
-        {tab === "demo" ? (
-          <>
-            <div className="flex-1 md:basis-3/5 p-1.5 md:p-3 min-w-0">
-              <ChatSimulator onUpdate={bumpDashboard} onConnection={setChatOk} />
-            </div>
-            <div className="hidden md:block md:basis-2/5 border-l border-gray-200 min-w-0">
-              <Dashboard refreshKey={refreshKey} onConnection={setDashOk} />
-            </div>
-          </>
-        ) : (
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        {view === "about" ? (
           <div className="flex-1 min-w-0">
             <AboutTab />
           </div>
+        ) : (
+          <>
+            {/* Chat: full width on mobile, 60% on desktop */}
+            <div
+              className={`${
+                view === "chat" ? "flex" : "hidden md:flex"
+              } flex-1 md:basis-3/5 p-1.5 md:p-3 min-w-0`}
+            >
+              <div className="flex-1 min-w-0 min-h-0">
+                <ChatSimulator onUpdate={bumpDashboard} onConnection={setChatOk} />
+              </div>
+            </div>
+            {/* Dashboard: full width on mobile (when active), 40% on desktop (always) */}
+            <div
+              className={`${
+                view === "dashboard" ? "flex md:block" : "hidden md:block"
+              } md:basis-2/5 md:border-l md:border-gray-200 min-w-0 flex-1`}
+            >
+              <Dashboard refreshKey={refreshKey} onConnection={setDashOk} />
+            </div>
+          </>
         )}
       </div>
 
-      {/* Mobile drawer (demo tab only) */}
-      {tab === "demo" && drawerOpen && (
-        <div className="fixed inset-0 z-50 md:hidden">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setDrawerOpen(false)} />
-          <div className="absolute right-0 top-0 bottom-0 w-[88%] max-w-md bg-gray-50 shadow-xl">
-            <div className="flex justify-end p-2">
-              <button
-                onClick={() => setDrawerOpen(false)}
-                className="text-xs rounded border border-gray-300 px-2 py-1"
-              >
-                Close
+      {/* Bottom tab bar — mobile only */}
+      <div className="md:hidden border-t border-gray-200 bg-white grid grid-cols-3 shrink-0 safe-bottom">
+        <TabButton active={view === "chat"} label="Chat" onClick={() => setView("chat")} icon={
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+        } />
+        <TabButton active={view === "dashboard"} label="Dashboard" onClick={() => setView("dashboard")} icon={
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+        } />
+        <TabButton active={view === "about"} label="About" onClick={() => setView("about")} icon={
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        } />
+      </div>
+
+      {/* Hamburger sheet — mobile and tablet */}
+      {menuOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setMenuOpen(false)} />
+          <div className="absolute right-0 top-0 bottom-0 w-[82%] max-w-sm bg-white shadow-xl flex flex-col">
+            <div className="flex items-center justify-between p-3 border-b border-gray-200">
+              <div className="text-sm font-semibold">Menu</div>
+              <button onClick={() => setMenuOpen(false)} className="text-gray-400 hover:text-gray-700 p-1" aria-label="Close menu">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
-            <div className="h-[calc(100%-44px)]">
-              <Dashboard refreshKey={refreshKey} onConnection={setDashOk} />
+            <div className="p-3 space-y-1 overflow-y-auto">
+              <MenuButton onClick={() => togglePanel("legend")} label="Who's who" hint="5 archetype characters" />
+              <MenuButton onClick={() => togglePanel("rules")} label="Moderation rules" hint="R1–R10 explained" />
+              <MenuButton onClick={() => togglePanel("roadmap")} label="Roadmap" hint="What's done and next" />
+              <div className="border-t my-2" />
+              <MenuButton
+                onClick={resetDemo}
+                disabled={resetting}
+                label={resetting ? "Resetting…" : "Reset demo"}
+                hint="Wipe and reseed the data"
+                danger
+              />
             </div>
           </div>
         </div>
@@ -329,3 +365,37 @@ export default function Page() {
   );
 }
 
+function TabButton({
+  active, label, icon, onClick,
+}: { active: boolean; label: string; icon: React.ReactNode; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex flex-col items-center justify-center gap-0.5 py-2 transition-colors ${
+        active ? "text-forest" : "text-gray-500 hover:text-gray-800"
+      }`}
+    >
+      <div className={active ? "scale-110 transition-transform" : ""}>{icon}</div>
+      <div className="text-[11px] font-medium">{label}</div>
+    </button>
+  );
+}
+
+function MenuButton({
+  onClick, label, hint, disabled, danger,
+}: { onClick: () => void; label: string; hint?: string; disabled?: boolean; danger?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`w-full text-left rounded-md border px-3 py-2.5 disabled:opacity-50 ${
+        danger
+          ? "border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100"
+          : "border-gray-200 bg-white hover:bg-gray-50"
+      }`}
+    >
+      <div className="text-sm font-medium">{label}</div>
+      {hint && <div className="text-[11px] text-gray-500 mt-0.5">{hint}</div>}
+    </button>
+  );
+}
