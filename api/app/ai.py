@@ -14,7 +14,8 @@ try:
     from anthropic import Anthropic
     _key = os.getenv("ANTHROPIC_API_KEY")
     if _key:
-        _client = Anthropic(api_key=_key, timeout=30.0, max_retries=1)
+        # max_retries handles 429 / 529 overload responses with exponential backoff.
+        _client = Anthropic(api_key=_key, timeout=30.0, max_retries=4)
         log.info("Anthropic client initialized")
     else:
         _client = None
