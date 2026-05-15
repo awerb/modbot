@@ -3,7 +3,7 @@
 export default function AboutTab() {
   return (
     <div className="h-full overflow-y-auto bg-white">
-      <div className="max-w-3xl mx-auto px-6 py-8 space-y-8 text-gray-800">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8 text-gray-800">
         <header>
           <h1 className="text-2xl font-semibold">YGL Mod</h1>
           <p className="text-gray-600 mt-1">

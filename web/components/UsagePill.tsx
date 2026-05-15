@@ -67,13 +67,16 @@ export default function UsagePill() {
         title="Anthropic API cost on this instance"
       >
         <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-        Claude · {fmt$(data.total_cost_usd)} · {data.total_calls} {data.total_calls === 1 ? "call" : "calls"}
+        <span className="hidden sm:inline">Claude · </span>
+        {fmt$(data.total_cost_usd)}
+        <span className="hidden sm:inline"> · {data.total_calls} {data.total_calls === 1 ? "call" : "calls"}</span>
+        <span className="sm:hidden text-gray-400">· {data.total_calls}</span>
       </button>
 
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 mt-1 z-50 w-[360px] max-w-[90vw] bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-[12px]">
+          <div className="fixed sm:absolute right-2 sm:right-0 left-2 sm:left-auto top-14 sm:top-auto sm:mt-1 z-50 sm:w-[360px] max-w-[calc(100vw-1rem)] bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-[12px]">
             <div className="flex items-center justify-between mb-2">
               <div className="font-semibold text-sm">Anthropic usage</div>
               <div className="text-[10px] text-gray-400">refresh every 5s</div>

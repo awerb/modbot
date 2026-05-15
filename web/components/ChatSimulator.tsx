@@ -267,17 +267,17 @@ export default function ChatSimulator({
   return (
     <div className="flex flex-col h-full bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
       {/* Header */}
-      <div className="bg-wa-header text-white px-4 py-3 flex items-center gap-3">
-        <div className="flex -space-x-2">
+      <div className="bg-wa-header text-white px-3 py-2.5 flex items-center gap-2.5">
+        <div className="flex -space-x-2 shrink-0">
           {members.slice(0, 4).map((m) => (
             <Avatar key={m.id} initial={m.avatar_initial} color={m.avatar_color} size={28} />
           ))}
         </div>
-        <div className="flex-1">
-          <div className="font-semibold">{groupName || "Loading..."}</div>
-          <div className="text-xs opacity-80">{members.length} members</div>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-sm truncate">{groupName || "Loading..."}</div>
+          <div className="text-[11px] opacity-80">{members.length} members</div>
         </div>
-        <div className="text-xs opacity-80">Simulator</div>
+        <div className="text-[11px] opacity-80 hidden sm:block">Simulator</div>
       </div>
 
       {/* Pause-suggested banner */}
@@ -450,18 +450,19 @@ export default function ChatSimulator({
             forwarded
           </label>
         </div>
-        <div className="flex items-center gap-2 mb-2 overflow-x-auto pb-1">
+        <div className="flex items-center gap-2.5 mb-2 overflow-x-auto pb-1 -mx-1 px-1">
           {members.map((m) => (
             <button
               key={m.id}
               onClick={() => setActive(m.id)}
               title={`${m.display_name} · ${m.archetype}`}
-              className="shrink-0"
+              className="shrink-0 p-1 -m-1"
+              aria-label={`Post as ${m.display_name}`}
             >
               <Avatar
                 initial={m.avatar_initial}
                 color={m.avatar_color}
-                size={36}
+                size={40}
                 ring={m.id === active}
               />
             </button>

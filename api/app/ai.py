@@ -26,7 +26,7 @@ except Exception as e:
     log.exception("Failed to initialize Anthropic client: %s", e)
 
 MODEL_FAST = "claude-haiku-4-5-20251001"
-MODEL_SMART = "claude-sonnet-4-5"
+MODEL_SMART = "claude-sonnet-4-6"
 
 
 # USD per 1M tokens. Public Anthropic pricing as of demo build; adjust if pricing
@@ -34,6 +34,7 @@ MODEL_SMART = "claude-sonnet-4-5"
 PRICING = {
     "claude-haiku-4-5-20251001": {"input": 1.0, "output": 5.0, "cache_write": 1.25, "cache_read": 0.10},
     "claude-sonnet-4-5":         {"input": 3.0, "output": 15.0, "cache_write": 3.75, "cache_read": 0.30},
+    "claude-sonnet-4-6":         {"input": 3.0, "output": 15.0, "cache_write": 3.75, "cache_read": 0.30},
 }
 
 

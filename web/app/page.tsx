@@ -112,17 +112,17 @@ export default function Page() {
   return (
     <div className="h-screen w-screen flex flex-col">
       {/* Top bar */}
-      <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-2 gap-3">
+      <div className="flex flex-wrap items-center justify-between border-b border-gray-200 bg-white px-3 py-2 gap-y-2 gap-x-2">
         <div className="flex items-center gap-2 shrink-0">
           <div className="w-8 h-8 rounded-md bg-forest text-white font-bold flex items-center justify-center">
             Y
           </div>
           <div>
             <div className="text-sm font-semibold leading-tight">YGL Mod</div>
-            <div className="text-[11px] text-gray-500 leading-tight">moderation tool</div>
+            <div className="text-[11px] text-gray-500 leading-tight hidden sm:block">moderation tool</div>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 flex-wrap justify-end">
           <button
             onClick={() => setTab(tab === "about" ? "demo" : "about")}
             className={`text-xs rounded border px-2 py-1 ${tab === "about" ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
@@ -142,7 +142,8 @@ export default function Page() {
             className={`text-xs rounded border px-2 py-1 ${rulesOpen ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
             title="What rules drive the moderation signals?"
           >
-            Moderation rules
+            <span className="sm:hidden">Rules</span>
+            <span className="hidden sm:inline">Moderation rules</span>
           </button>
           <button
             onClick={() => togglePanel("roadmap")}
@@ -160,7 +161,7 @@ export default function Page() {
                   ? "border-emerald-300 text-emerald-700 bg-emerald-50"
                   : "border-gray-300 text-gray-500 bg-gray-50"
             }`}
-            title="API connection"
+            title={connected === false ? "offline" : connected ? "online" : "connecting..."}
           >
             <span
               className={`w-1.5 h-1.5 rounded-full ${
@@ -171,7 +172,9 @@ export default function Page() {
                     : "bg-gray-400"
               }`}
             />
-            {connected === false ? "offline" : connected ? "online" : "..."}
+            <span className="hidden sm:inline">
+              {connected === false ? "offline" : connected ? "online" : "..."}
+            </span>
           </span>
           {tab === "demo" && (
             <>
@@ -181,11 +184,16 @@ export default function Page() {
                 className="text-xs rounded border border-gray-300 px-2 py-1 hover:bg-gray-50 disabled:opacity-50"
                 title="Wipe and reseed the demo data"
               >
-                {resetting ? "Resetting…" : "Reset demo"}
+                {resetting ? "Resetting…" : (
+                  <>
+                    <span className="sm:hidden">Reset</span>
+                    <span className="hidden sm:inline">Reset demo</span>
+                  </>
+                )}
               </button>
               <button
                 onClick={() => setDrawerOpen(true)}
-                className="md:hidden text-xs rounded border border-gray-300 px-2 py-1"
+                className="md:hidden text-xs rounded border border-forest bg-forest text-white px-2 py-1"
               >
                 Dashboard
               </button>
@@ -284,7 +292,7 @@ export default function Page() {
       <div className="flex-1 flex overflow-hidden">
         {tab === "demo" ? (
           <>
-            <div className="flex-1 md:basis-3/5 p-3 min-w-0">
+            <div className="flex-1 md:basis-3/5 p-1.5 md:p-3 min-w-0">
               <ChatSimulator onUpdate={bumpDashboard} onConnection={setChatOk} />
             </div>
             <div className="hidden md:block md:basis-2/5 border-l border-gray-200 min-w-0">
