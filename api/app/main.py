@@ -636,7 +636,7 @@ def resolve_alert(alert_id: str, db: Session = Depends(get_db)):
 # ---------- Forward friction actions (R5) ----------
 
 @app.post("/forwards/{message_id}/{action}")
-def forward_action(message_id: str, action: str, db: Session = Depends(get_db)):
+def forward_action(message_id: str, action: str, _=Depends(_require_admin), db: Session = Depends(get_db)):
     if action not in ("release", "discard"):
         raise HTTPException(400, "action must be 'release' or 'discard'")
     m = db.query(models.Message).filter(models.Message.id == message_id).first()

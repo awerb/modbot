@@ -97,16 +97,21 @@ export default function ChatSimulator({
       const r = await jget(`/chat/messages`);
       const serverMsgs: Msg[] = r.messages;
       setMessages(serverMsgs);
-      // Drop optimistic entries whose specific server_id is now visible.
+      // Drop optimistic entries whose specific server_id is now visible,
+      // and clean their entries out of the temp -> server map so it doesn't grow forever.
       setOptimistic((opt) => {
         if (opt.length === 0) return opt;
         const serverIds = new Set(serverMsgs.map((m) => m.id));
-        return opt.filter((o) => {
+        const next: typeof opt = [];
+        for (const o of opt) {
           const sid = optimisticServerIds.current.get(o.id);
-          // Keep if we don't know its server id yet (POST hasn't returned),
-          // or if its server twin hasn't shown up in /chat/messages yet.
-          return !sid || !serverIds.has(sid);
-        });
+          if (sid && serverIds.has(sid)) {
+            optimisticServerIds.current.delete(o.id);
+            continue;
+          }
+          next.push(o);
+        }
+        return next;
       });
       // Clear pending IDs for messages that now have an analysis
       setPendingIds((prev) => {
