@@ -81,6 +81,8 @@ class Analysis(Base):
     is_assertion = Column(Boolean, default=False)
     is_repair = Column(Boolean, default=False)
     repair_notes = Column(Text, nullable=True)
+    is_personal_event = Column(Boolean, default=False)
+    personal_event_notes = Column(Text, nullable=True)
     references_member_id = Column(String, nullable=True)
 
 

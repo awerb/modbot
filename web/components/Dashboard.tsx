@@ -48,6 +48,12 @@ type DashData = {
     notes: string;
     member: { display_name: string; avatar_color: string; avatar_initial: string };
   }>;
+  personal_events: Array<{
+    id: string;
+    text: string;
+    notes: string | null;
+    member: { display_name: string; avatar_color: string; avatar_initial: string };
+  }>;
   topics: Array<{ tag: string; count: number }>;
   yesterday_artifact: { date: string; summary: string; suggested_question: string } | null;
   alerts: Alert[];
@@ -347,6 +353,30 @@ export default function Dashboard({
                 <div className="text-sm text-gray-800">{m.text}</div>
                 {m.notes && (
                   <div className="text-[11px] text-red-700 mt-1 italic">{m.notes}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
+      <Section title={`Personal events flagged (${data.personal_events?.length ?? 0})`}>
+        {!data.personal_events || data.personal_events.length === 0 ? (
+          <Empty>No off-topic personal posts.</Empty>
+        ) : (
+          <div className="space-y-2">
+            {data.personal_events.map((m) => (
+              <div key={m.id} className="rounded-md border border-violet-200 bg-violet-50 p-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <Avatar initial={m.member.avatar_initial} color={m.member.avatar_color} size={22} />
+                  <div className="text-xs font-medium">{m.member.display_name}</div>
+                  <span className="text-[10px] bg-violet-200 text-violet-800 rounded px-1.5 py-0.5">
+                    personal
+                  </span>
+                </div>
+                <div className="text-sm text-gray-800">{m.text}</div>
+                {m.notes && (
+                  <div className="text-[11px] text-violet-700 mt-1 italic">{m.notes}</div>
                 )}
               </div>
             ))}
