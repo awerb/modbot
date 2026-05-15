@@ -141,6 +141,16 @@ def _stub_deep(text: str, members: Optional[List[str]] = None) -> dict:
     is_q = text.strip().endswith("?")
     is_disagree = any(p in lower for p in ["that is not", "that's not", "you're wrong", "i disagree", "no.", "stop"])
     is_repair = any(p in lower for p in ["i'm sorry", "fair point", "i'll pull that back", "you're right", "i didn't know", "thank you for"])
+    # Personal-events heuristic: off-topic personal-life markers. A topic-aware
+    # LLM call will refine this; the stub just catches obvious life-update phrasing.
+    personal_markers = [
+        "my mom", "my mum", "my dad", "my parents", "my husband", "my wife",
+        "my partner", "my boyfriend", "my girlfriend", "my kids", "my son",
+        "my daughter", "my birthday", "my anniversary", "got engaged",
+        "got married", "passed away", "in the hospital", "got promoted",
+        "lost my job", "my surgery", "my diagnosis",
+    ]
+    is_personal_event = any(p in lower for p in personal_markers)
     ref = None
     if members:
         # Match first member name or first-name found in the message
@@ -160,6 +170,8 @@ def _stub_deep(text: str, members: Optional[List[str]] = None) -> dict:
         "is_assertion": not is_q,
         "is_repair": is_repair,
         "repair_notes": "Heuristic." if is_repair else "",
+        "is_personal_event": is_personal_event,
+        "personal_event_notes": "Heuristic: off-topic personal-life phrasing." if is_personal_event else "",
         "references_member": ref,
     }
 
@@ -245,10 +257,12 @@ Definitions:
 - is_assertion: speaker is making a claim or stating a position.
 - is_repair: speaker is walking back, apologizing, acknowledging harm caused by their own prior post, or thanking someone for a correction. Mark this generously, it's important.
 - repair_notes: if is_repair, one short sentence explaining what was repaired.
+- is_personal_event: speaker is posting a personal life event or issue that is OFF-TOPIC for the group discussion. Examples: family news, health updates, birthdays, job changes, marriage news, personal venting unrelated to the topic. DO NOT flag lived experience or personal stakes that are connected to the topic under discussion (e.g. "my cousin lives in Gaza," "as someone who immigrated," "I lost a friend to this policy") — that's testimony, not an off-topic life update. When in doubt, false.
+- personal_event_notes: if is_personal_event, one short sentence describing the off-topic content.
 - references_member: if the message is responding to a specific named member, return that display name. Else null.
 
 Respond with ONLY a JSON object:
-{{"heat_score": float, "is_disagreement": bool, "steelman_present": bool, "is_question": bool, "is_assertion": bool, "is_repair": bool, "repair_notes": str, "references_member": str|null}}"""
+{{"heat_score": float, "is_disagreement": bool, "steelman_present": bool, "is_question": bool, "is_assertion": bool, "is_repair": bool, "repair_notes": str, "is_personal_event": bool, "personal_event_notes": str, "references_member": str|null}}"""
     try:
         resp = _client.messages.create(
             model=MODEL_SMART,

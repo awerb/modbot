@@ -15,8 +15,8 @@ export default function AboutTab() {
           <h2 className="text-lg font-semibold mb-2">What's built</h2>
           <ul className="list-disc pl-5 space-y-1.5 text-[14px]">
             <li><b>WhatsApp-style chat simulator</b> with 5 archetype characters you can post as. Optimistic send, day dividers, forwarded labels, click chips to expand AI reasoning.</li>
-            <li><b>Moderator dashboard</b> with floor-balance tiles, held forwards, targeted-language flags, topics in play, and a daily suggested question / summary.</li>
-            <li><b>AI analysis pipeline</b> on every message: factuality / source check (Haiku), targeting check (Sonnet, with explicit examples that distinguish quoting language from using it), and a deeper classifier for heat, disagreement, steelman, question vs. assertion, and repair detection (Sonnet).</li>
+            <li><b>Moderator dashboard</b> with floor-balance tiles, held forwards, targeted-language flags, off-topic personal-event flags, topics in play, and a daily suggested question / summary.</li>
+            <li><b>AI analysis pipeline</b> on every message: factuality / source check (Haiku), targeting check (Sonnet, with explicit examples that distinguish quoting language from using it), and a deeper classifier for heat, disagreement, steelman, question vs. assertion, repair detection, and off-topic personal-event detection (Sonnet).</li>
             <li><b>Moderator alerts</b>: pause-suggested when rolling heat stays elevated, steelman-missing on heated disagreements without acknowledgement, repair-detected when someone walks back, exit-velocity when a member goes quiet after a contested exchange, and a quiet-member-contributed badge that surfaces underweighted voices.</li>
             <li><b>Graceful degradation</b>: works without an Anthropic key (heuristic fallback), client-side retry on connection blips, optimistic UI for sends.</li>
           </ul>
@@ -36,7 +36,7 @@ export default function AboutTab() {
           <h2 className="text-lg font-semibold mb-2">Data model</h2>
           <ul className="list-disc pl-5 space-y-1 text-[13px]">
             <li><code>groups</code>, <code>members</code>, <code>messages</code></li>
-            <li><code>analyses</code> per message: factuality / source / has_unsourced_claim, target_flag + category + notes, topic_tags, plus phase 2: heat_score, is_disagreement, steelman_present, is_question, is_assertion, is_repair, repair_notes, references_member_id</li>
+            <li><code>analyses</code> per message: factuality / source / has_unsourced_claim, target_flag + category + notes, topic_tags, plus phase 2: heat_score, is_disagreement, steelman_present, is_question, is_assertion, is_repair, repair_notes, is_personal_event, personal_event_notes, references_member_id</li>
             <li><code>group_state</code>: rolling_heat, question_assertion_ratio_7d, last_pause_prompt_at</li>
             <li><code>member_state</code>: last_substantive_post_at, last_contested_exchange_at, silent_since, repair_count, steelman_count</li>
             <li><code>moderator_alerts</code>: kinds = pause_suggested | steelman_missing | repair_detected | exit_velocity | quiet_member_substantive</li>
@@ -56,6 +56,7 @@ export default function AboutTab() {
             <Rule code="R10" name="Exit velocity" status="live">Contested exchange + 48h silence emits exit_velocity alert (moderator-only).</Rule>
             <Rule code="R7" name="Q / A ratio" status="live">Rolling 7d ratio displayed; flagged when assertion-heavy.</Rule>
             <Rule code="R8" name="Quiet-member reward" status="live">Quiet member who posts substantively gets surfaced as an alert and referenced in tomorrow's question.</Rule>
+            <Rule code="R11" name="No personal events/issues" status="live">Off-topic personal life posts (family news, health updates, birthdays, job changes) are flagged in a personal_events panel. Lived experience tied to the topic is not flagged.</Rule>
           </div>
         </section>
 

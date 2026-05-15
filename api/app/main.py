@@ -37,6 +37,8 @@ PHASE2_COLUMNS = [
     ("is_assertion", "BOOLEAN DEFAULT FALSE"),
     ("is_repair", "BOOLEAN DEFAULT FALSE"),
     ("repair_notes", "TEXT"),
+    ("is_personal_event", "BOOLEAN DEFAULT FALSE"),
+    ("personal_event_notes", "TEXT"),
     ("references_member_id", "VARCHAR"),
 ]
 
@@ -187,6 +189,8 @@ def chat_messages(group_id: Optional[str] = None, since: Optional[str] = None, d
                 "is_question": a.is_question,
                 "is_repair": a.is_repair,
                 "repair_notes": a.repair_notes,
+                "is_personal_event": a.is_personal_event,
+                "personal_event_notes": a.personal_event_notes,
             },
         })
     return {"group_id": g.id, "group_name": g.name, "messages": out}
@@ -331,6 +335,8 @@ def _run_analysis(db: Session, msg: models.Message) -> "models.Analysis | None":
         is_assertion=bool(deep.get("is_assertion")),
         is_repair=bool(deep.get("is_repair")),
         repair_notes=deep.get("repair_notes"),
+        is_personal_event=bool(deep.get("is_personal_event")),
+        personal_event_notes=deep.get("personal_event_notes"),
         references_member_id=ref_member_id,
     )
     db.add(a)
@@ -766,6 +772,25 @@ def dashboard_data(group_id: Optional[str] = None, db: Session = Depends(get_db)
                 },
             })
 
+    personal_events = []
+    for m in msgs:
+        if m.received_at < recent_cutoff:
+            continue
+        a = analyses.get(m.id)
+        if a and a.is_personal_event:
+            mem = next((x for x in members if x.id == m.member_id), None)
+            personal_events.append({
+                "id": m.id,
+                "text": m.text,
+                "received_at": m.received_at.isoformat(),
+                "notes": a.personal_event_notes,
+                "member": {
+                    "display_name": mem.display_name if mem else "?",
+                    "avatar_color": mem.avatar_color if mem else "#888",
+                    "avatar_initial": mem.avatar_initial if mem else "?",
+                },
+            })
+
     topic_counts: Dict[str, int] = defaultdict(int)
     cutoff48 = now - timedelta(hours=48)
     for m in msgs:
@@ -814,6 +839,7 @@ def dashboard_data(group_id: Optional[str] = None, db: Session = Depends(get_db)
         "member_tiles": member_tiles,
         "held_forwards": held,
         "targeted_messages": targeted,
+        "personal_events": personal_events,
         "topics": [{"tag": t, "count": c} for t, c in topics],
         "yesterday_artifact": None if not artifact else {
             "date": str(artifact.date),
