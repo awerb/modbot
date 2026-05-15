@@ -121,7 +121,7 @@ export default function Page() {
           </div>
           <div className="min-w-0">
             <div className="text-sm font-semibold leading-tight truncate">YGL Mod</div>
-            <div className="text-[11px] text-gray-500 leading-tight truncate hidden sm:block">moderation tool</div>
+            <div className="text-[11px] text-gray-500 leading-tight truncate hidden sm:block">moderation simulation</div>
           </div>
         </div>
 

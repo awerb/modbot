@@ -7,7 +7,7 @@ export default function AboutTab() {
         <header>
           <h1 className="text-2xl font-semibold">YGL Mod</h1>
           <p className="text-gray-600 mt-1">
-            A moderation tool for small high-trust discussion groups (built for a Young Global Leaders pilot on difficult conversations). The product question: can AI help a human moderator notice the things that actually matter, without taking the human out of the loop?
+            A moderation simulation for small high-trust discussion groups (built for a Young Global Leaders pilot on difficult conversations). The product question: can AI help a human moderator notice the things that actually matter, without taking the human out of the loop?
           </p>
         </header>
 
