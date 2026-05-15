@@ -124,6 +124,13 @@ export default function Page() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
+            onClick={() => setTab(tab === "about" ? "demo" : "about")}
+            className={`text-xs rounded border px-2 py-1 ${tab === "about" ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
+            title="Technical description of what's built"
+          >
+            About
+          </button>
+          <button
             onClick={() => togglePanel("legend")}
             className={`text-xs rounded border px-2 py-1 ${legendOpen ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
             title="Who are these characters?"
@@ -143,13 +150,6 @@ export default function Page() {
             title="What's done and what's planned"
           >
             Roadmap
-          </button>
-          <button
-            onClick={() => setTab(tab === "about" ? "demo" : "about")}
-            className={`text-xs rounded border px-2 py-1 ${tab === "about" ? "border-forest bg-forest/5 text-forest" : "border-gray-300 hover:bg-gray-50"}`}
-            title="Technical description of what's built"
-          >
-            About
           </button>
           <UsagePill />
           <span
