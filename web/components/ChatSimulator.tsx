@@ -141,11 +141,24 @@ export default function ChatSimulator({
     loadMembers();
     loadMessages();
     loadPauseAlert();
+    // Skip polling while the tab is hidden so a background tab doesn't keep
+    // the Railway services awake; catch up as soon as it's visible again.
     const t = setInterval(() => {
+      if (document.hidden) return;
       loadMessages();
       loadPauseAlert();
     }, 2500);
-    return () => clearInterval(t);
+    const onVis = () => {
+      if (!document.hidden) {
+        loadMessages();
+        loadPauseAlert();
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, []);
 
   async function dismissPause() {

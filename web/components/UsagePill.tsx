@@ -43,8 +43,19 @@ export default function UsagePill() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
+    // Skip polling while the tab is hidden so a background tab doesn't keep
+    // the Railway services awake.
+    const t = setInterval(() => {
+      if (!document.hidden) load();
+    }, 5000);
+    const onVis = () => {
+      if (!document.hidden) load();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, []);
 
   if (!data) {

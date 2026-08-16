@@ -106,8 +106,19 @@ export default function Dashboard({
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 3000);
-    return () => clearInterval(t);
+    // Skip polling while the tab is hidden so a background tab doesn't keep
+    // the Railway services awake; catch up as soon as it's visible again.
+    const t = setInterval(() => {
+      if (!document.hidden) load();
+    }, 3000);
+    const onVis = () => {
+      if (!document.hidden) load();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, [refreshKey]);
 
   async function regenerate() {
